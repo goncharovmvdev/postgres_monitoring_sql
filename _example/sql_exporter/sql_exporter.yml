@@ -1,0 +1,33 @@
+global:
+  scrape_timeout: 10s
+  scrape_timeout_offset: 500ms
+  min_interval: 0s
+  max_connections: 3
+  max_idle_connections: 3
+
+# мультитаргетный режим: один экспортёр опрашивает primary и реплику,
+# метрики различаются лейблами job/instance.
+# Prometheus скрейпит КАЖДЫЙ job отдельным таргетом (params jobs[]= в
+# prometheus.yml): у инстансов независимые sample_limit и up{}
+# коллекторы разведены по частотам (fixes.txt CRITICAL "защита сбора" + ИНТЕРВАЛЫ):
+# fast 15s: pg_instance, pg_workload; 60s: pg_instance_slow, pg_statements, pg_objects;
+# 300s: pg_objects_slow; 1h: pg_bloat — частоты заданы min_interval внутри коллекторов
+jobs:
+  - job_name: primary
+    collectors: [pg_instance, pg_instance_slow, pg_workload, pg_statements,
+                 pg_objects, pg_objects_slow, pg_bloat]
+    static_configs:
+      - targets:
+          primary: "postgres://monitoring:monitoring@postgres:5432/postgres?sslmode=disable"
+
+  # standby снимает тот же общий набор + свой pg_standby;
+  # общие коллекторы написаны recovery-safe (см. CASE pg_is_in_recovery в pg_instance.yml)
+  - job_name: standby
+    collectors: [pg_instance, pg_instance_slow, pg_workload, pg_statements,
+                 pg_objects, pg_objects_slow, pg_bloat, pg_standby]
+    static_configs:
+      - targets:
+          replica: "postgres://monitoring:monitoring@replica:5432/postgres?sslmode=disable"
+
+collector_files:
+  - /etc/sql_exporter/collectors/*.yml

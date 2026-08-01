@@ -1,0 +1,49 @@
+global:
+  scrape_interval: 15s
+  # мультихост/мультикластер (fixes.txt HIGH): различают кластеры при
+  # remote_write/federation/алертах; в локальных запросах не видны
+  external_labels:
+    cluster: pg-demo
+    env: dev
+
+scrape_configs:
+  - job_name: node          # слой ОС (и hardware/гипервизор: steal, PSI)
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          host: demo-host   # связывает node-метрики с PG-инстансом ($host в дашбордах)
+
+  # Postgres-метрики: экспортёр один, но scrape РАЗВЕДЁН по инстансам через
+  # params jobs[] (sql_exporter v0.14+). У каждого инстанса свой scrape-таргет,
+  # свой sample_limit и свой up{job=...}: превышение лимита или зависший сбор
+  # standby больше не гасит метрики primary одним отброшенным scrape'ом
+  # (раньше общий лимит 10000 применялся к сумме primary+standby ~6k — запас <2x).
+  - job_name: sql-primary
+    params:
+      jobs[]: [primary]
+    honor_labels: true      # сохранить лейблы job/instance, проставленные sql_exporter
+    # предохранители кардинальности (fixes.txt КАРДИНАЛЬНОСТЬ): лучше потерять
+    # один scrape, чем взорвать TSDB; лимит теперь per-инстанс (~3k факт)
+    sample_limit: 8000
+    label_limit: 30
+    static_configs:
+      - targets: ["sql-exporter:9399"]
+        labels:
+          host: demo-host
+
+  - job_name: sql-standby
+    params:
+      jobs[]: [standby]
+    honor_labels: true
+    sample_limit: 8000
+    label_limit: 30
+    static_configs:
+      - targets: ["sql-exporter:9399"]
+        labels:
+          host: demo-host
+
+  # самомониторинг Prometheus: prometheus_tsdb_head_series для ряда
+  # «7. Здоровье мониторинга» в pg-layered (рост серий = взрыв кардинальности)
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

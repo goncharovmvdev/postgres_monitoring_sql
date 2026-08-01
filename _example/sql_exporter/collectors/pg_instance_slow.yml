@@ -1,0 +1,31 @@
+# медленные метрики инстанса: сканы каталогов — не для 15s
+# (fixes.txt ИНТЕРВАЛЫ: pg_ls_waldir 60s, архиваторная очередь 1m)
+collector_name: pg_instance_slow
+min_interval: 60s
+
+metrics:
+  - metric_name: pg_wal_directory_size_bytes
+    type: gauge
+    help: "pg_wal directory size (wal/wal_directory_size.sql); directory scan, keep at 60s+"
+    values: [v]
+    query: SELECT COALESCE(SUM(size), 0)::float8 AS v FROM pg_ls_waldir()
+
+  # глубина очереди архиватора: failed_count==0 при ВИСЯЩЕМ архиваторе — ложный
+  # покой, а .ready-файлы копятся (fixes.txt MEDIUM)
+  - metric_name: pg_archiver_pending_wals
+    type: gauge
+    help: "WAL segments waiting to be archived (.ready files in archive_status)"
+    values: [cnt]
+    query: |
+      SELECT COUNT(*)::float8 AS cnt
+      FROM pg_ls_archive_statusdir()
+      WHERE name LIKE '%.ready'
+
+  # -1 = ещё ничего не архивировалось (или standby без archive_mode=always)
+  - metric_name: pg_archiver_last_archived_age_seconds
+    type: gauge
+    help: "Seconds since last successful WAL archive; -1 = never"
+    values: [v]
+    query: |
+      SELECT COALESCE(EXTRACT(EPOCH FROM (now() - last_archived_time)), -1)::float8 AS v
+      FROM pg_stat_archiver

@@ -1,0 +1,430 @@
+# слой "инстанс PostgreSQL" — замена postgres_exporter (по образцу pgMonitor v5)
+# имена базовых метрик совместимы с postgres_exporter, чтобы дашборды/алерты не менять
+# ВНИМАНИЕ: pg_stat_checkpointer/pg_stat_io — PG17/PG16+; на PG<=16 см. wal/checkpoints.sql
+collector_name: pg_instance
+
+metrics:
+  # ВАЖНО про семантику: при падении БД эта серия не становится 0 — она
+  # ИСЧЕЗАЕТ из scrape (запрос не выполнился). Панели обязаны дописывать
+  # `or on() vector(0)`, алерт — absent(pg_up{job="primary"}); здоровье самого
+  # сбора — up{job=~"sql-.*"} на стороне Prometheus (по таргету на инстанс)
+  - metric_name: pg_up
+    type: gauge
+    help: "Whether the exporter can reach the database; series DISAPPEARS (not 0) when DB is down - use absent()/or vector(0)"
+    values: [up]
+    query: SELECT 1::float8 AS up
+
+  # рестарты/failover: падение uptime = crash-recovery или рестарт; без этой
+  # метрики рестарт виден только косвенно как counter reset (system/version_uptime.sql)
+  - metric_name: pg_postmaster_uptime_seconds
+    type: gauge
+    help: "Seconds since postmaster start (system/version_uptime.sql); drop = restart/crash/failover"
+    values: [v]
+    query: |
+      SELECT EXTRACT(EPOCH FROM (now() - pg_postmaster_start_time()))::float8 AS v
+
+  - metric_name: pg_stat_activity_count
+    type: gauge
+    help: "Sessions by state"
+    key_labels: [state]
+    values: [cnt]
+    query: |
+      SELECT COALESCE(state, 'background') AS state, COUNT(*)::float8 AS cnt
+      FROM pg_stat_activity
+      GROUP BY 1
+
+  - metric_name: pg_settings_max_connections
+    type: gauge
+    help: "max_connections setting"
+    values: [v]
+    query: SELECT current_setting('max_connections')::float8 AS v
+
+  # только клиентские бэкенды: именно они расходуют max_connections
+  # (background-процессы в pg_stat_activity_count завышали % занятости)
+  - metric_name: pg_client_backends_count
+    type: gauge
+    help: "Client backends only, the ones that consume max_connections slots"
+    values: [cnt]
+    query: |
+      SELECT COUNT(*)::float8 AS cnt
+      FROM pg_stat_activity
+      WHERE backend_type = 'client backend'
+
+  # кто именно занял слоты max_connections: клиентские бэкенды по базе/роли.
+  # Кардинальность ограничена природой (баз × ролей), LIMIT 20 — предохранитель
+  # на случай ролей-на-пользователя; application_name сюда НЕ добавлять (не ограничен)
+  - metric_name: pg_backends_by_user
+    type: gauge
+    help: "Client backends by database and role: who is eating max_connections slots"
+    key_labels: [datname, usename]
+    values: [cnt]
+    query: |
+      SELECT COALESCE(datname, '(none)') AS datname,
+             COALESCE(usename, '(none)') AS usename,
+             COUNT(*)::float8 AS cnt
+      FROM pg_stat_activity
+      WHERE backend_type = 'client backend'
+      GROUP BY 1, 2
+      ORDER BY COUNT(*) DESC
+      LIMIT 20
+
+  - metric_name: pg_settings_autovacuum_max_workers
+    type: gauge
+    help: "autovacuum_max_workers setting (saturation line for worker panel)"
+    values: [v]
+    query: SELECT current_setting('autovacuum_max_workers')::float8 AS v
+
+  - metric_name: pg_stat_database_xact_commit
+    type: counter
+    help: "Committed transactions per database"
+    key_labels: [datname]
+    values: [v]
+    query: |
+      SELECT d.datname, s.xact_commit::float8 AS v
+      FROM pg_stat_database s JOIN pg_database d ON d.oid = s.datid
+      WHERE NOT d.datistemplate
+
+  - metric_name: pg_stat_database_xact_rollback
+    type: counter
+    help: "Rolled back transactions per database"
+    key_labels: [datname]
+    values: [v]
+    query: |
+      SELECT d.datname, s.xact_rollback::float8 AS v
+      FROM pg_stat_database s JOIN pg_database d ON d.oid = s.datid
+      WHERE NOT d.datistemplate
+
+  - metric_name: pg_stat_database_blks_hit
+    type: counter
+    help: "Buffer cache hits per database"
+    key_labels: [datname]
+    values: [v]
+    query: |
+      SELECT d.datname, s.blks_hit::float8 AS v
+      FROM pg_stat_database s JOIN pg_database d ON d.oid = s.datid
+      WHERE NOT d.datistemplate
+
+  - metric_name: pg_stat_database_blks_read
+    type: counter
+    help: "Disk block reads per database"
+    key_labels: [datname]
+    values: [v]
+    query: |
+      SELECT d.datname, s.blks_read::float8 AS v
+      FROM pg_stat_database s JOIN pg_database d ON d.oid = s.datid
+      WHERE NOT d.datistemplate
+
+  - metric_name: pg_stat_database_deadlocks
+    type: counter
+    help: "Deadlocks per database"
+    key_labels: [datname]
+    values: [v]
+    query: |
+      SELECT d.datname, s.deadlocks::float8 AS v
+      FROM pg_stat_database s JOIN pg_database d ON d.oid = s.datid
+      WHERE NOT d.datistemplate
+
+  # temp-файлы: и байты, и количество (cache_io/temp_files_by_database.sql)
+  - metric_name: pg_stat_database_temp
+    type: counter
+    help: "Temp files spilled per database (cache_io/temp_files_by_database.sql)"
+    key_labels: [datname]
+    value_label: kind
+    values: [bytes, files]
+    query: |
+      SELECT d.datname, s.temp_bytes::float8 AS bytes, s.temp_files::float8 AS files
+      FROM pg_stat_database s JOIN pg_database d ON d.oid = s.datid
+      WHERE NOT d.datistemplate
+
+  # время IO по базам, мс (требует track_io_timing=on; system/database_stats.sql)
+  - metric_name: pg_stat_database_blk_time_ms
+    type: counter
+    help: "Block IO time per database, ms (needs track_io_timing)"
+    key_labels: [datname]
+    value_label: op
+    values: [read, write]
+    query: |
+      SELECT d.datname, s.blk_read_time::float8 AS read, s.blk_write_time::float8 AS write
+      FROM pg_stat_database s JOIN pg_database d ON d.oid = s.datid
+      WHERE NOT d.datistemplate
+
+  # профиль строк по базам (system/database_stats.sql)
+  - metric_name: pg_stat_database_tup
+    type: counter
+    help: "Tuple throughput per database (system/database_stats.sql)"
+    key_labels: [datname]
+    value_label: op
+    values: [returned, fetched, inserted, updated, deleted]
+    query: |
+      SELECT d.datname, s.tup_returned::float8 AS returned, s.tup_fetched::float8 AS fetched,
+             s.tup_inserted::float8 AS inserted, s.tup_updated::float8 AS updated,
+             s.tup_deleted::float8 AS deleted
+      FROM pg_stat_database s JOIN pg_database d ON d.oid = s.datid
+      WHERE NOT d.datistemplate
+
+  # обрывы/фаталы/килы сессий (PG14+, system/sessions_stats.sql)
+  - metric_name: pg_stat_database_sessions
+    type: counter
+    help: "Session terminations per database (system/sessions_stats.sql, PG14+)"
+    key_labels: [datname]
+    value_label: kind
+    values: [total, abandoned, fatal, killed]
+    query: |
+      SELECT d.datname, s.sessions::float8 AS total, s.sessions_abandoned::float8 AS abandoned,
+             s.sessions_fatal::float8 AS fatal, s.sessions_killed::float8 AS killed
+      FROM pg_stat_database s JOIN pg_database d ON d.oid = s.datid
+      WHERE NOT d.datistemplate
+
+  # повреждения страниц (PG12+, system/checksum_failures.sql); 0 = чисто или checksums off
+  - metric_name: pg_checksum_failures_total
+    type: counter
+    help: "Checksum failures across cluster (system/checksum_failures.sql)"
+    values: [v]
+    query: SELECT COALESCE(SUM(checksum_failures), 0)::float8 AS v FROM pg_stat_database
+
+  # granted=false — очередь за локами: её рост виден раньше и понятнее, чем сумма
+  # удержанных+ожидающих; кто кого держит — таблица pg_blocking_pids в дашборде
+  - metric_name: pg_locks_count
+    type: gauge
+    help: "Locks by mode and granted flag; granted=false = waiting queue (locks/blocking_sessions.sql family)"
+    key_labels: [mode, granted]
+    values: [cnt]
+    query: |
+      SELECT mode, granted::text AS granted, COUNT(*)::float8 AS cnt
+      FROM pg_locks
+      GROUP BY mode, granted
+
+  # --- атрибуция IO по подсистемам: кто именно ест диск (cache_io/stat_io_overview.sql, PG16+) ---
+  - metric_name: pg_stat_io_ops_total
+    type: counter
+    help: "IO operations by backend_type and context (cache_io/stat_io_overview.sql, PG16+)"
+    key_labels: [backend_type, context]
+    value_label: op
+    values: [reads, writes, extends, hits, evictions, fsyncs]
+    query: |
+      SELECT backend_type, context,
+             COALESCE(SUM(reads), 0)::float8 AS reads,
+             COALESCE(SUM(writes), 0)::float8 AS writes,
+             COALESCE(SUM(extends), 0)::float8 AS extends,
+             COALESCE(SUM(hits), 0)::float8 AS hits,
+             COALESCE(SUM(evictions), 0)::float8 AS evictions,
+             COALESCE(SUM(fsyncs), 0)::float8 AS fsyncs
+      FROM pg_stat_io
+      GROUP BY backend_type, context
+      HAVING COALESCE(SUM(reads), 0) + COALESCE(SUM(writes), 0) + COALESCE(SUM(extends), 0)
+           + COALESCE(SUM(hits), 0) + COALESCE(SUM(evictions), 0) + COALESCE(SUM(fsyncs), 0) > 0
+
+  - metric_name: pg_stat_io_time_ms_total
+    type: counter
+    help: "IO time by backend_type, ms (needs track_io_timing; PG16+)"
+    key_labels: [backend_type]
+    value_label: op
+    values: [read, write, fsync]
+    query: |
+      SELECT backend_type,
+             COALESCE(SUM(read_time), 0)::float8 AS read,
+             COALESCE(SUM(write_time), 0)::float8 AS write,
+             COALESCE(SUM(fsync_time), 0)::float8 AS fsync
+      FROM pg_stat_io
+      GROUP BY backend_type
+      HAVING COALESCE(SUM(read_time), 0) + COALESCE(SUM(write_time), 0) + COALESCE(SUM(fsync_time), 0) > 0
+
+  # --- SLRU-кэши (PG13+, cache_io/slru_stats.sql): SubtransSLRU/MultiXact —
+  #     классика внезапной деградации, в AAS видна лишь как безликий LWLock ---
+  - metric_name: pg_slru_blks_total
+    type: counter
+    help: "SLRU cache activity by cache name (cache_io/slru_stats.sql, PG13+)"
+    key_labels: [name]
+    value_label: op
+    values: [zeroed, hit, read, written]
+    query: |
+      SELECT name,
+             blks_zeroed::float8 AS zeroed,
+             blks_hit::float8 AS hit,
+             blks_read::float8 AS read,
+             blks_written::float8 AS written
+      FROM pg_stat_slru
+
+  # --- генерация WAL (wal/wal_activity.sql, PG14-17; на PG18 переехало в pg_stat_io) ---
+  - metric_name: pg_stat_wal
+    type: counter
+    help: "WAL generation counters (wal/wal_activity.sql)"
+    value_label: kind
+    values: [records, fpi, bytes, buffers_full, write, sync]
+    query: |
+      SELECT wal_records::float8 AS records, wal_fpi::float8 AS fpi, wal_bytes::float8 AS bytes,
+             wal_buffers_full::float8 AS buffers_full, wal_write::float8 AS write, wal_sync::float8 AS sync
+      FROM pg_stat_wal
+
+  # латентность записи/fsync WAL (требует track_wal_io_timing=on) — главный
+  # драйвер commit latency; time/count = мс на операцию (панель «WAL: латентность»)
+  - metric_name: pg_stat_wal_time_ms_total
+    type: counter
+    help: "WAL write/fsync time, ms (needs track_wal_io_timing; PG14-17, on PG18 moved to pg_stat_io)"
+    value_label: op
+    values: [write, sync]
+    query: |
+      SELECT wal_write_time::float8 AS write, wal_sync_time::float8 AS sync
+      FROM pg_stat_wal
+
+  # pg_wal_directory_size_bytes переехал в pg_instance_slow.yml:
+  # pg_ls_waldir() сканирует каталог — не для 15s (fixes.txt ИНТЕРВАЛЫ)
+
+  # --- чекпоинты и bgwriter (wal/checkpoints_pg17.sql, wal/bgwriter.sql) ---
+  - metric_name: pg_stat_checkpointer_num_timed_total
+    type: counter
+    help: "Timed checkpoints, incl. skipped (wal/checkpoints_pg17.sql)"
+    values: [v]
+    query: SELECT num_timed::float8 AS v FROM pg_stat_checkpointer
+
+  - metric_name: pg_stat_checkpointer_num_requested_total
+    type: counter
+    help: "Requested checkpoints (wal/checkpoints_pg17.sql)"
+    values: [v]
+    query: SELECT num_requested::float8 AS v FROM pg_stat_checkpointer
+
+  - metric_name: pg_stat_checkpointer_buffers_written_total
+    type: counter
+    help: "Buffers written by checkpointer"
+    values: [v]
+    query: SELECT buffers_written::float8 AS v FROM pg_stat_checkpointer
+
+  - metric_name: pg_stat_checkpointer_time_ms_total
+    type: counter
+    help: "Checkpoint write/sync time, ms (wal/checkpoints_pg17.sql)"
+    value_label: op
+    values: [write, sync]
+    query: |
+      SELECT write_time::float8 AS write, sync_time::float8 AS sync FROM pg_stat_checkpointer
+
+  - metric_name: pg_stat_bgwriter_buffers_clean_total
+    type: counter
+    help: "Buffers cleaned by bgwriter (wal/bgwriter.sql)"
+    values: [v]
+    query: SELECT buffers_clean::float8 AS v FROM pg_stat_bgwriter
+
+  - metric_name: pg_stat_bgwriter_buffers_alloc_total
+    type: counter
+    help: "Buffers allocated (wal/bgwriter.sql)"
+    values: [v]
+    query: SELECT buffers_alloc::float8 AS v FROM pg_stat_bgwriter
+
+  - metric_name: pg_stat_bgwriter_maxwritten_clean_total
+    type: counter
+    help: "Times bgwriter stopped at bgwriter_lru_maxpages (wal/bgwriter.sql)"
+    values: [v]
+    query: SELECT maxwritten_clean::float8 AS v FROM pg_stat_bgwriter
+
+  - metric_name: pg_stat_archiver_archived_count
+    type: counter
+    help: "Successfully archived WAL files (wal/archiver_status.sql)"
+    values: [v]
+    query: SELECT archived_count::float8 AS v FROM pg_stat_archiver
+
+  - metric_name: pg_stat_archiver_failed_count
+    type: counter
+    help: "Failed WAL archive attempts (wal/archiver_status.sql)"
+    values: [v]
+    query: SELECT failed_count::float8 AS v FROM pg_stat_archiver
+
+  - metric_name: pg_long_running_transactions
+    type: gauge
+    help: "Client transactions open longer than 5 minutes (activity/long_running_queries.sql)"
+    values: [cnt]
+    query: |
+      SELECT COUNT(*)::float8 AS cnt
+      FROM pg_stat_activity
+      WHERE backend_type = 'client backend'
+        AND xact_start < now() - INTERVAL '5 minutes'
+
+  # --- репликация со стороны primary (replication/replication_status.sql, replication_slots.sql) ---
+  # state <> 'backup' + MAX/GROUP BY: pg_basebackup держит ВТОРОЙ walsender с тем
+  # же application_name (state='backup') — дубль лейблов ронял весь scrape ровно
+  # в момент пересоздания реплики; MAX по имени = худший лаг из одноимённых
+  - metric_name: pg_stat_replication_lag_bytes
+    type: gauge
+    help: "Replica lag in bytes by stage vs current WAL, worst per application_name (replication/replication_status.sql)"
+    key_labels: [application_name]
+    value_label: stage
+    values: [sent, write, flush, replay]
+    query: |
+      WITH src AS (
+          SELECT CASE WHEN pg_is_in_recovery() THEN pg_last_wal_replay_lsn()
+                      ELSE pg_current_wal_lsn() END AS lsn
+      )
+      SELECT r.application_name,
+             MAX(COALESCE(pg_wal_lsn_diff(src.lsn, r.sent_lsn), 0))::float8 AS sent,
+             MAX(COALESCE(pg_wal_lsn_diff(src.lsn, r.write_lsn), 0))::float8 AS write,
+             MAX(COALESCE(pg_wal_lsn_diff(src.lsn, r.flush_lsn), 0))::float8 AS flush,
+             MAX(COALESCE(pg_wal_lsn_diff(src.lsn, r.replay_lsn), 0))::float8 AS replay
+      FROM pg_stat_replication r CROSS JOIN src
+      WHERE r.state <> 'backup'
+      GROUP BY r.application_name
+
+  - metric_name: pg_stat_replication_lag_seconds
+    type: gauge
+    help: "Replica lag in seconds by stage, worst per application_name (write_lag/flush_lag/replay_lag)"
+    key_labels: [application_name]
+    value_label: stage
+    values: [write, flush, replay]
+    query: |
+      SELECT application_name,
+             MAX(COALESCE(EXTRACT(EPOCH FROM write_lag), 0))::float8 AS write,
+             MAX(COALESCE(EXTRACT(EPOCH FROM flush_lag), 0))::float8 AS flush,
+             MAX(COALESCE(EXTRACT(EPOCH FROM replay_lag), 0))::float8 AS replay
+      FROM pg_stat_replication
+      WHERE state <> 'backup'
+      GROUP BY application_name
+
+  - metric_name: pg_sync_standbys
+    type: gauge
+    help: "Connected standbys in sync state; 0 while synchronous_standby_names set = commits are stuck"
+    values: [cnt]
+    query: |
+      SELECT COUNT(*)::float8 AS cnt
+      FROM pg_stat_replication
+      WHERE sync_state = 'sync'
+
+  - metric_name: pg_replication_slots
+    type: gauge
+    help: "Physical/logical slots: active flag, retained WAL bytes, safe_wal_size (-1 = unlimited)"
+    key_labels: [slot_name]
+    value_label: kind
+    values: [active, retained_wal_bytes, safe_wal_size]
+    query: |
+      WITH src AS (
+          SELECT CASE WHEN pg_is_in_recovery() THEN pg_last_wal_replay_lsn()
+                      ELSE pg_current_wal_lsn() END AS lsn
+      )
+      SELECT s.slot_name,
+             s.active::int::float8 AS active,
+             COALESCE(pg_wal_lsn_diff(src.lsn, s.restart_lsn), 0)::float8 AS retained_wal_bytes,
+             COALESCE(s.safe_wal_size, -1)::float8 AS safe_wal_size
+      FROM pg_replication_slots s CROSS JOIN src
+
+  # wal_status = 'lost'/'unreserved' информативнее байтов удержания (PG13+)
+  - metric_name: pg_replication_slot_status
+    type: gauge
+    help: "Slot wal_status as info metric: reserved/extended/unreserved/lost; value always 1"
+    key_labels: [slot_name, wal_status]
+    values: [info]
+    query: |
+      SELECT slot_name, COALESCE(wal_status, 'unknown') AS wal_status, 1::float8 AS info
+      FROM pg_replication_slots
+
+  # --- гигиена инстанса ---
+  - metric_name: pg_prepared_xacts
+    type: gauge
+    help: "Prepared (2PC) transactions: count and oldest age (activity/prepared_transactions.sql)"
+    value_label: kind
+    values: [count, oldest_seconds]
+    query: |
+      SELECT COUNT(*)::float8 AS count,
+             COALESCE(EXTRACT(EPOCH FROM MAX(now() - prepared)), 0)::float8 AS oldest_seconds
+      FROM pg_prepared_xacts
+
+  - metric_name: pg_settings_pending_restart
+    type: gauge
+    help: "Settings changed but waiting for restart (system/pending_restart.sql)"
+    values: [cnt]
+    query: SELECT COUNT(*)::float8 AS cnt FROM pg_settings WHERE pending_restart

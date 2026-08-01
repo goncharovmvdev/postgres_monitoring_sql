@@ -1,0 +1,245 @@
+# pg_stat_statements / pg_stat_kcache / wait-профиль по queryid.
+# min_interval 60s (fixes.txt HIGH "ИСПРАВИТЬ top-N"): панели используют окна [5m].
+# Экспортируется top-100 (не top-10): отбор "горячей десятки прямо сейчас"
+# делает topk(10, rate(...)) в PromQL — по недавней активности, а не по
+# lifetime-сумме. Откат — rollback_cumulative_stats.txt.
+collector_name: pg_statements
+min_interval: 60s
+
+metrics:
+  # видимость выселений из pgss: dealloc растёт -> счётчики top-N тихо
+  # обнуляются, увеличивайте pg_stat_statements.max или чаще reset
+  - metric_name: pg_statements_dealloc_total
+    type: counter
+    help: "pg_stat_statements entries evicted due to pg_stat_statements.max overflow (PG14+)"
+    values: [v]
+    query: SELECT dealloc::float8 AS v FROM pg_stat_statements_info
+
+  # --- top-100 по времени: базовый набор для topk() в панелях ---
+  # ВЕЗДЕ GROUP BY queryid, datname: в pg_stat_statements строка на
+  # (userid, dbid, queryid) — без агрегации один запрос от двух ролей
+  # даёт дубль лейблов и клиент Prometheus отвергает весь сбор
+  - metric_name: pg_top_query_exec_seconds_total
+    type: counter
+    help: "Per-query execution time, top-100 by total time; text lookup by queryid (queries/top_total_time.sql)"
+    key_labels: [queryid, datname]
+    values: [seconds]
+    query: |
+      SELECT s.queryid::text AS queryid, d.datname,
+             (SUM(s.total_exec_time) / 1000)::float8 AS seconds
+      FROM pg_stat_statements s
+      JOIN pg_database d ON d.oid = s.dbid
+      GROUP BY 1, 2
+      ORDER BY SUM(s.total_exec_time) DESC
+      LIMIT 100
+
+  - metric_name: pg_top_query_calls_total
+    type: counter
+    help: "Per-query calls, top-100 by total time (queries/top_calls.sql)"
+    key_labels: [queryid, datname]
+    values: [calls]
+    query: |
+      SELECT s.queryid::text AS queryid, d.datname, SUM(s.calls)::float8 AS calls
+      FROM pg_stat_statements s
+      JOIN pg_database d ON d.oid = s.dbid
+      GROUP BY 1, 2
+      ORDER BY SUM(s.total_exec_time) DESC
+      LIMIT 100
+
+  # ресурсный профиль тех же top-100 (queries/top_io_read.sql, top_temp_usage.sql)
+  - metric_name: pg_top_query_resources_total
+    type: counter
+    help: "Per-query resource counters, top-100 by total time (queries/top_io_read.sql, top_temp_usage.sql)"
+    key_labels: [queryid, datname]
+    value_label: kind
+    values: [rows, shared_blks_read, temp_blks_written, wal_bytes]
+    query: |
+      SELECT s.queryid::text AS queryid, d.datname,
+             SUM(s.rows)::float8 AS rows,
+             SUM(s.shared_blks_read)::float8 AS shared_blks_read,
+             SUM(s.temp_blks_written)::float8 AS temp_blks_written,
+             SUM(s.wal_bytes)::float8 AS wal_bytes
+      FROM pg_stat_statements s
+      JOIN pg_database d ON d.oid = s.dbid
+      GROUP BY 1, 2
+      ORDER BY SUM(s.total_exec_time) DESC
+      LIMIT 100
+
+  # детектор plan flip (fixes.txt CRITICAL "захват планов"): рост stddev/max
+  # при том же rate = бимодальная латентность = вероятно, сменился план.
+  # mean — взвешенное по calls; stddev через MAX — упрощение, для
+  # относительного детектора (отношение stddev/mean) этого достаточно
+  - metric_name: pg_top_query_time_ms
+    type: gauge
+    help: "mean/stddev/max exec time per query since reset, top-100 by total time (plan-flip detector)"
+    key_labels: [queryid, datname]
+    value_label: stat
+    values: [mean, stddev, max]
+    query: |
+      SELECT s.queryid::text AS queryid, d.datname,
+             (SUM(s.total_exec_time) / NULLIF(SUM(s.calls), 0))::float8 AS mean,
+             MAX(s.stddev_exec_time)::float8 AS stddev,
+             MAX(s.max_exec_time)::float8 AS max
+      FROM pg_stat_statements s
+      JOIN pg_database d ON d.oid = s.dbid
+      GROUP BY 1, 2
+      ORDER BY SUM(s.total_exec_time) DESC
+      LIMIT 100
+
+  # top-100 именно ПО WAL: быстрый, но WAL-жирный запрос в top-по-времени может не попасть
+  - metric_name: pg_top_wal_query_bytes_total
+    type: counter
+    help: "Top-100 queries by WAL generated (queries/statements_export_topn.sql)"
+    key_labels: [queryid, datname]
+    values: [wal_bytes]
+    query: |
+      SELECT s.queryid::text AS queryid, d.datname, SUM(s.wal_bytes)::float8 AS wal_bytes
+      FROM pg_stat_statements s
+      JOIN pg_database d ON d.oid = s.dbid
+      GROUP BY 1, 2
+      ORDER BY SUM(s.wal_bytes) DESC
+      LIMIT 100
+
+  # top-100 именно ПО temp-спиллу — по той же причине
+  - metric_name: pg_top_temp_query_blks_total
+    type: counter
+    help: "Top-100 queries by temp blocks written (queries/top_temp_usage.sql)"
+    key_labels: [queryid, datname]
+    values: [temp_blks]
+    query: |
+      SELECT s.queryid::text AS queryid, d.datname, SUM(s.temp_blks_written)::float8 AS temp_blks
+      FROM pg_stat_statements s
+      JOIN pg_database d ON d.oid = s.dbid
+      GROUP BY 1, 2
+      ORDER BY SUM(s.temp_blks_written) DESC
+      LIMIT 100
+
+  # --- pg_stat_kcache: CPU и реальный физический IO per query (fixes.txt HIGH) ---
+  - metric_name: pg_kcache_query_cpu_seconds_total
+    type: counter
+    help: "Real user+system CPU per query (pg_stat_kcache), top-100 by CPU"
+    key_labels: [queryid, datname]
+    value_label: mode
+    values: [user, system]
+    query: |
+      SELECT k.queryid::text AS queryid, d.datname,
+             SUM(k.exec_user_time)::float8 AS "user",
+             SUM(k.exec_system_time)::float8 AS "system"
+      FROM pg_stat_kcache() k
+      JOIN pg_database d ON d.oid = k.dbid
+      WHERE k.top
+      GROUP BY 1, 2
+      ORDER BY SUM(k.exec_user_time + k.exec_system_time) DESC
+      LIMIT 100
+
+  - metric_name: pg_kcache_query_io_bytes_total
+    type: counter
+    help: "Real physical reads/writes per query (pg_stat_kcache), top-100 by reads; unlike shared_blks_read this IS the disk"
+    key_labels: [queryid, datname]
+    value_label: op
+    values: [reads, writes]
+    query: |
+      SELECT k.queryid::text AS queryid, d.datname,
+             SUM(k.exec_reads)::float8 AS reads,
+             SUM(k.exec_writes)::float8 AS writes
+      FROM pg_stat_kcache() k
+      JOIN pg_database d ON d.oid = k.dbid
+      WHERE k.top
+      GROUP BY 1, 2
+      ORDER BY SUM(k.exec_reads) DESC
+      LIMIT 100
+
+  # суммарный CPU базы — для сверки со слоем 2 (node CPU): "чей это CPU?"
+  - metric_name: pg_kcache_cpu_seconds_total
+    type: counter
+    help: "Total DB CPU from pg_stat_kcache, compare with host CPU (node_exporter)"
+    value_label: mode
+    values: [user, system]
+    query: |
+      SELECT COALESCE(SUM(exec_user_time), 0)::float8 AS "user",
+             COALESCE(SUM(exec_system_time), 0)::float8 AS "system"
+      FROM pg_stat_kcache()
+
+  # --- ВСЕ queryid (не только top): сырьё для перцентилей поперёк запросов ---
+  # порог по calls вместо голого LIMIT (fixes.txt КАРДИНАЛЬНОСТЬ): membership
+  # стабильнее, меньше churn серий; LIMIT 500 остаётся жёстким предохранителем
+  - metric_name: pg_query_exec_seconds_total
+    type: counter
+    help: "Total exec time per queryid (raw data for cross-query latency percentiles)"
+    key_labels: [queryid]
+    values: [seconds]
+    query: |
+      SELECT queryid::text AS queryid,
+             (SUM(total_exec_time) / 1000)::float8 AS seconds
+      FROM pg_stat_statements
+      WHERE queryid IS NOT NULL
+      GROUP BY queryid
+      HAVING SUM(calls) >= 25
+      ORDER BY SUM(calls) DESC
+      LIMIT 500
+
+  - metric_name: pg_query_calls_total
+    type: counter
+    help: "Calls per queryid (raw data for cross-query call-rate percentiles)"
+    key_labels: [queryid]
+    values: [calls]
+    query: |
+      SELECT queryid::text AS queryid,
+             SUM(calls)::float8 AS calls
+      FROM pg_stat_statements
+      WHERE queryid IS NOT NULL
+      GROUP BY queryid
+      HAVING SUM(calls) >= 25
+      ORDER BY SUM(calls) DESC
+      LIMIT 500
+
+  # ожидания per queryid (pg_wait_sampling), top-50 для стабильного membership.
+  # Фильтр как в pg_wait_profile_total: минус Activity и Client:ClientRead
+  # (у idle-сессии queryid ПОСЛЕДНЕГО запроса — ClientRead приписал бы ему
+  # часы фиктивного ожидания), ClientWrite оставлен (медленный клиент)
+  - metric_name: pg_wait_query_profile_total
+    type: counter
+    help: "Sampled waits per queryid, top-50 most-waiting queries (pg_wait_sampling); excl. Activity and ClientRead"
+    key_labels: [queryid, event_type]
+    values: [samples]
+    query: |
+      SELECT p.queryid::text AS queryid,
+             COALESCE(p.event_type, 'Running') AS event_type,
+             SUM(p.count)::float8 AS samples
+      FROM pg_wait_sampling_profile p
+      JOIN (
+          SELECT queryid
+          FROM pg_wait_sampling_profile
+          WHERE queryid IS NOT NULL AND queryid <> 0
+            AND COALESCE(event_type, 'Running') <> 'Activity'
+            AND NOT (COALESCE(event_type, 'Running') = 'Client' AND event = 'ClientRead')
+          GROUP BY queryid
+          ORDER BY SUM(count) DESC
+          LIMIT 50
+      ) top USING (queryid)
+      WHERE COALESCE(p.event_type, 'Running') <> 'Activity'
+        AND NOT (COALESCE(p.event_type, 'Running') = 'Client' AND p.event = 'ClientRead')
+      GROUP BY 1, 2
+
+  # queryid -> текст запроса (усечённый); info-метрика со значением 1.
+  # Текст в лейбле — осознанный компромисс при ~30 сериях (fixes.txt
+  # КАРДИНАЛЬНОСТЬ); при расширении top-выборок сюда — выносить в таблицу
+  # напрямую из PG (PostgreSQL datasource)
+  - metric_name: pg_query_info
+    type: gauge
+    help: "Query text lookup for top queries; value is always 1"
+    key_labels: [queryid, datname, query]
+    values: [info]
+    query: |
+      WITH tops AS (
+          (SELECT queryid, dbid, query FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10)
+          UNION
+          (SELECT queryid, dbid, query FROM pg_stat_statements ORDER BY wal_bytes DESC LIMIT 10)
+          UNION
+          (SELECT queryid, dbid, query FROM pg_stat_statements ORDER BY temp_blks_written DESC LIMIT 10)
+      )
+      SELECT t.queryid::text AS queryid, d.datname,
+             LEFT(regexp_replace(t.query, '\s+', ' ', 'g'), 120) AS query,
+             1::float8 AS info
+      FROM tops t
+      JOIN pg_database d ON d.oid = t.dbid

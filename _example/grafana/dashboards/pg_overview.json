@@ -1,0 +1,848 @@
+{
+  "uid": "pg-overview",
+  "title": "PostgreSQL: Обзор",
+  "schemaVersion": 39,
+  "refresh": "15s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "links": [
+    {
+      "title": "Детальный: по слоям",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/pg-layered",
+      "keepTime": true,
+      "asDropdown": false,
+      "includeVars": true,
+      "targetBlank": false,
+      "tags": []
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "PostgreSQL жив",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "links": [
+        {
+          "title": "Слой 3: инстанс",
+          "url": "/d/pg-layered?viewPanel=301&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "ЭКСПОРТЁР МЁРТВ",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max(pg_up{job=~\"$db\"}) or on() vector(0)",
+          "refId": "A"
+        }
+      ],
+      "description": "При падении БД серия исчезает, а не становится 0 — «or on() vector(0)» даёт красный ноль. Алерт: absent(pg_up{job=\"primary\"})."
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Синхронных реплик",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "links": [
+        {
+          "title": "Слой 6: репликация",
+          "url": "/d/pg-layered?viewPanel=603&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_sync_standbys{job=\"primary\",host=~\"$host\"} or on() vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "walreceiver жив",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "links": [
+        {
+          "title": "Слой 6: репликация",
+          "url": "/d/pg-layered?viewPanel=604&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_standby_wal_receiver_up{host=~\"$host\"} or on() vector(0)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Диск: свободно (худший том)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "links": [
+        {
+          "title": "Слой 2: ОС, диск",
+          "url": "/d/pg-layered?viewPanel=204&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 15
+              },
+              {
+                "color": "green",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "min(100 * node_filesystem_avail_bytes{host=~\"$host\",fstype!~\"tmpfs|overlay|squashfs\"} / node_filesystem_size_bytes)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Коннекты, % от max",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "links": [
+        {
+          "title": "Слой 3: коннекты",
+          "url": "/d/pg-layered?viewPanel=302&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "100 * pg_client_backends_count{job=~\"$db\"} / scalar(pg_settings_max_connections{job=~\"$db\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Max XID age",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "links": [
+        {
+          "title": "Слой 4: wraparound",
+          "url": "/d/pg-layered?viewPanel=402&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 200000000
+              },
+              {
+                "color": "red",
+                "value": 1000000000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max(pg_db_xid_age{job=~\"$db\"})",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Транзакции/с",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 5
+      },
+      "links": [
+        {
+          "title": "Слой 3: TPS",
+          "url": "/d/pg-layered?viewPanel=304&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(pg_stat_database_xact_commit{job=~\"$db\"}[1m]))",
+          "legendFormat": "commit",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(pg_stat_database_xact_rollback{job=~\"$db\"}[1m]))",
+          "legendFormat": "rollback",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Средняя латентность запроса, мс",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 5
+      },
+      "links": [
+        {
+          "title": "Слой 5: workload",
+          "url": "/d/pg-layered?viewPanel=502&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "1000 * rate(pg_statements_exec_seconds_total{job=~\"$db\"}[1m]) / clamp_min(rate(pg_statements_calls_total{job=~\"$db\"}[1m]), 0.001)",
+          "legendFormat": "avg",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Лаг реплики, сек (replay)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 5
+      },
+      "links": [
+        {
+          "title": "Слой 6: репликация",
+          "url": "/d/pg-layered?viewPanel=601&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_stat_replication_lag_seconds{host=~\"$host\",stage=\"replay\"}",
+          "legendFormat": "{{application_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Локи и долгие транзакции",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 5
+      },
+      "links": [
+        {
+          "title": "Слой 5: DB Load (класс Lock)",
+          "url": "/d/pg-layered?viewPanel=515&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(pg_waiting_sessions{job=~\"$db\",wait_event_type=\"Lock\"}) or vector(0)",
+          "legendFormat": "lock waiters",
+          "refId": "A"
+        },
+        {
+          "expr": "pg_long_running_transactions{job=~\"$db\"}",
+          "legendFormat": "транзакции > 5 мин",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Генерация WAL, байт/с",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 11
+      },
+      "links": [
+        {
+          "title": "Слой 3: WAL",
+          "url": "/d/pg-layered?viewPanel=316&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "rate(pg_stat_wal{job=~\"$db\",kind=\"bytes\"}[1m])",
+          "legendFormat": "WAL",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Deadlocks/мин и temp-файлы/мин",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 11
+      },
+      "links": [
+        {
+          "title": "Слой 3: ошибки",
+          "url": "/d/pg-layered?viewPanel=309&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(pg_stat_database_deadlocks{job=~\"$db\"}[5m])) * 60",
+          "legendFormat": "deadlocks/мин",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(pg_stat_database_temp{job=~\"$db\",kind=\"files\"}[5m])) * 60",
+          "legendFormat": "temp файлов/мин",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Таблиц ждут вакуума",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 11
+      },
+      "links": [
+        {
+          "title": "Слой 4: вакуум",
+          "url": "/d/pg-layered?viewPanel=409&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_tables_need_vacuum{job=~\"$db\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Ошибки: fatal/killed сессии, checksum",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 11
+      },
+      "links": [
+        {
+          "title": "Слой 3: ошибки",
+          "url": "/d/pg-layered?viewPanel=318&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (kind) (rate(pg_stat_database_sessions{job=~\"$db\",kind!=\"total\"}[5m])) * 60",
+          "legendFormat": "{{kind}}/мин",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(pg_checksum_failures_total{job=~\"$db\"}[5m]) * 60",
+          "legendFormat": "checksum/мин",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Чем занята база: DB Load по классам ожиданий (AAS) vs ядра",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "links": [
+        {
+          "title": "Слой 5: workload",
+          "url": "/d/pg-layered?viewPanel=515&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ядра"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "mode": "none"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "sum by (event_type) (rate(pg_wait_profile_total{job=~\"$db\"}[1m])) / 100",
+          "legendFormat": "{{event_type}}",
+          "refId": "A"
+        },
+        {
+          "expr": "count(node_cpu_seconds_total{host=~\"$host\",mode=\"idle\"})",
+          "legendFormat": "ядра",
+          "refId": "B"
+        }
+      ],
+      "description": "AAS у числа ядер = насыщение. Плато класса Lock высотой N = N сессий в очереди за блокировкой."
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Диск: латентность, мс (худшее устройство)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 16
+      },
+      "links": [
+        {
+          "title": "Слой 2: ОС, диск",
+          "url": "/d/pg-layered?viewPanel=206&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "max(1000 * rate(node_disk_read_time_seconds_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[5m]) / clamp_min(rate(node_disk_reads_completed_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[5m]), 0.001))",
+          "legendFormat": "read",
+          "refId": "A"
+        },
+        {
+          "expr": "max(1000 * rate(node_disk_write_time_seconds_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[5m]) / clamp_min(rate(node_disk_writes_completed_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[5m]), 0.001))",
+          "legendFormat": "write",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Uptime PostgreSQL",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 18,
+        "y": 16
+      },
+      "links": [
+        {
+          "title": "Слой 3: инстанс",
+          "url": "/d/pg-layered?viewPanel=614&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "ЭКСПОРТЁР МЁРТВ",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 600
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_postmaster_uptime_seconds{job=~\"$db\"}",
+          "refId": "A",
+          "legendFormat": ""
+        }
+      ],
+      "description": "Резкое падение = рестарт / crash-recovery / failover. Красное = моложе 10 минут."
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "db",
+        "label": "Инстанс",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(pg_up, job)",
+          "refId": "var"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "regex": "/^(primary|standby)$/",
+        "current": {
+          "text": "primary",
+          "value": "primary"
+        }
+      },
+      {
+        "name": "host",
+        "label": "Хост",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(pg_up{job=~\"$db\"}, host)",
+          "refId": "var"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "demo-host",
+          "value": "demo-host"
+        }
+      }
+    ]
+  }
+}

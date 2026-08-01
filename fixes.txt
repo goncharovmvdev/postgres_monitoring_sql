@@ -1,0 +1,131 @@
+АУДИТ МОНИТОРИНГА: ЧТО ДОБАВИТЬ / УБРАТЬ / ИСПРАВИТЬ
+=====================================================
+Формат: действие — почему — overhead
+
+CRITICAL
+--------
+ДОБАВИТЬ захват планов: auto_explain в shared_preload_libraries
+     (log_min_duration='250ms', sample_rate=0.1, log_timing=off,
+     log_analyze=on, log_format=json). Опц.: pg_store_plans.
+     + экспортировать max/stddev/mean_exec_time из pgss (детектор plan flip).
+     — Регрессии планов сейчас не диагностируются ничем.
+     — Overhead: единицы % и только на сэмплированных медленных запросах
+       (timing=off — ключ к безопасности).
+
+ДОБАВИТЬ защиту сбора: ALTER ROLE monitoring SET statement_timeout='5s',
+     lock_timeout='1s'. Развести коллекторы: дешёвые/критичные (activity,
+     waits, locks, wal) отдельно от тяжёлых (objects/sizes).
+     — pg_total_relation_size берёт AccessShareLock и встаёт за DDL;
+       один зависший запрос роняет ВЕСЬ scrape — мониторинг гаснет
+       синхронно с инцидентом.
+     — Overhead: нулевой (чистая защита).
+
+HIGH
+----
+ДОБАВИТЬ pg_stat_kcache: top-N по exec_user_time/system_time,
+     exec_reads (реальные физические чтения).
+     — CPU per query отсутствует; shared_blks_read это НЕ диск (OS cache).
+     — Overhead: getrusage на запрос, ~1%.
+
+ИСПРАВИТЬ top-N: LIMIT 10 по кумулятивным total_* -> экспорт top-50..100
+     с min_interval 60s, отбор top-10 отдать topk(rate()) в PromQL.
+     + экспортировать pg_stat_statements_info.dealloc; регламент
+     pg_stat_statements_reset() и pg_wait_sampling_reset_profile().
+     — Lifetime-bias: новый тяжёлый запрос часами не виден; churn серий
+       ломает rate() (ложные "запрос остановился").
+     — Overhead: +200-400 серий на инстанс, незаметно.
+     — Откат: rollback_cumulative_stats.txt.
+
+ИСПРАВИТЬ лейблы под мультихост: external_labels {env,cluster},
+     согласованный instance/host у node- и sql-джобов, переменная $host.
+     — На втором сервере node-панели молча смешают все хосты в одну линию.
+     — Overhead: нулевой.
+
+ИСПРАВИТЬ pg_sequence_max_used_pct: GRANT SELECT ON ALL SEQUENCES
+     для monitoring (+default privileges), либо NULL -> -1 вместо 0.
+     — pg_sequences.last_value = NULL без прав (pg_monitor их НЕ даёт),
+       COALESCE(...,0) рисует вечно зелёные 0% — ложная уверенность.
+     — Overhead: нулевой.
+
+MEDIUM
+------
+ДОБАВИТЬ панель top wait events по (event_type, event) — лейбл event
+     уже собирается, но нигде не показан. Quick win.
+     — Overhead: нулевой (данные уже в TSDB, добавляется только панель).
+ДОБАВИТЬ bloat-коллектор (tables/table_bloat_estimate.sql уже есть)
+     с min_interval 1h. Dead tuples != bloat.
+     — Overhead: один тяжёлый SELECT раз в час — незаметно; на частотах
+       15s-5m ставить НЕЛЬЗЯ.
+ДОБАВИТЬ pg_stat_slru (cache_io/slru_stats.sql уже есть).
+     SubtransSLRU-коллапс виден в AAS только как безликий LWLock.
+     — Overhead: один дешёвый SELECT, ~10 серий.
+ДОБАВИТЬ autovacuum_max_workers (линия к панели воркеров) +
+     pg_stat_progress_vacuum. Сатурация воркеров сейчас не читается.
+     — Overhead: два дешёвых SELECT по системным вью, нулевой.
+ДОБАВИТЬ возраст last_archived_time + счётчик .ready-файлов
+     (pg_ls_archive_statusdir, min_interval 1m); wal_status/safe_wal_size
+     слотов. failed_count==0 при ВИСЯЩЕМ архиваторе — ложный покой.
+     — Overhead: скан каталога archive_status; при min_interval 1m
+       незаметен (растёт вместе с отставанием архиватора — не чаще).
+ДОБАВИТЬ на overview: AAS по классам vs ядра + disk latency stat.
+     Сейчас "чем занята база" требует проваливания в слой 5.
+     — Overhead: нулевой (те же серии, новые панели).
+
+ЕДИНИЦЫ / MISLEADING / ДУБЛИ
+----------------------------
+Overhead всего раздела: нулевой — только правки JSON дашборда и конфига
+коллектора; у двух пунктов УБРАТЬ — отрицательный (минус серии в TSDB).
+
+ИСПРАВИТЬ панели 315, 317: unit "short" при мс/с -> /1000 и
+     percentunit (сравнимо с disk util слоя 2).
+ИСПРАВИТЬ панель 505: заголовок "сек/с" vs unit percentunit —
+     выбрать одно.
+ИСПРАВИТЬ панель 606: байты и секунды на одной оси -> разнести.
+ИСПРАВИТЬ 312/313: "страниц/с" unit ops -> *8192 и Bps (сравнимо
+     с node_disk и панелями 509/513).
+ПЕРЕИМЕНОВАТЬ 509/513: shared_blks_read = "чтения мимо shared_buffers",
+     НЕ "с диска" (OS cache невидим). Честный диск - только kcache/node.
+ПЕРЕИМЕНОВАТЬ 517: это разброс СРЕДНИХ между запросами, не перцентили
+     латентности. Настоящие перцентили - pg_stat_monitor (overhead выше pgss).
+ИСПРАВИТЬ overview "Коннекты % от max": числитель включает background-
+     процессы (+5-8 п.п. завышения) -> фильтр client backend / numbackends.
+УБРАТЬ дубль pg_stat_database_temp_bytes (есть {kind="bytes"}).
+УБРАТЬ pg_lock_waiters (== pg_waiting_sessions{wait_event_type="Lock"}).
+
+ИНТЕРВАЛЫ СБОРА (min_interval в sql_exporter)
+---------------------------------------------
+activity/waits/locks/wal ......... 10-15s (как есть)
+pg_stat_statements top-N ......... 30-60s
+pg_ls_waldir() ................... 60s   (скан каталога, тысячи файлов)
+pg_database_size / table sizes ... 300s  (обход файлов + локи,
+                                          см. CRITICAL "защита сбора")
+invalid/unused idx, sequences .... 300-600s
+bloat estimate ................... 1h
+
+КАРДИНАЛЬНОСТЬ
+--------------
+- pg_query_*_total LIMIT 500 каждые 15s -> churn серий (худший вид для
+  TSDB): min_interval 60s + порог по calls вместо LIMIT; sample_limit
+  10000 + label_limit в scrape config как предохранитель.
+- pg_query_info: текст запроса в лейбле — при 30 сериях ок, паттерн
+  опасен; лучше таблица напрямую из PG (PostgreSQL datasource, instant).
+- relname top-20: на проде с партициями будет churn имён — агрегировать
+  до родителя.
+
+OPTIONAL
+--------
+- initdb --data-checksums: иначе pg_checksum_failures_total декоративен.
+  Overhead: единицы % CPU на пути записи; включается при initdb или
+  офлайн-конверсией pg_checksums — на живой базе бесплатно не появится.
+- network errs/drops.
+  Overhead: нулевой — node_exporter уже собирает эти счётчики.
+- pg_buffercache по требованию (не чаще 5-15 мин, дорогой).
+  Overhead: проход по ВСЕМ буферам shared_buffers под частичными
+  локами — на больших shared_buffers заметен, поэтому только редко
+  или вручную при разборе.
+- Гигиена (fk_without_index, duplicate_indexes, no-PK) — еженедельный
+  отчёт, не метрики.
+  Overhead: нулевой для мониторинга (вне scrape-пути).
+- Зафиксировать теги образов (сейчас всё :latest); prod-чеклист секретов
+  (monitoring:monitoring, sslmode=disable, trust для replication).
+  Overhead: нулевой.

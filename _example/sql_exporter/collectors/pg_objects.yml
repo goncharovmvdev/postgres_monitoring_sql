@@ -1,0 +1,114 @@
+# слой "postgres: базы и объекты", state-часть (60s): дешёвые вью, но
+# сортировка per-table метрик по pg_total_relation_size — не для 15s.
+# Размеры/индексная гигиена/sequences — в pg_objects_slow.yml (300s),
+# bloat — в pg_bloat.yml (1h). per-table ограничено top-20 по размеру:
+# в проде это защита от взрыва кардинальности.
+# У per-table метрик ОБЯЗАТЕЛЬНЫ datname+schemaname: без схемы одинаковый
+# relname в двух схемах даёт дубль лейблов — клиент отвергает всю метрику.
+# ВНИМАНИЕ: pg_stat_user_tables видит только ПОДКЛЮЧЁННУЮ базу (datname);
+# для мультибазового кластера — по target'у на базу в sql_exporter.yml
+collector_name: pg_objects
+min_interval: 60s
+
+metrics:
+  - metric_name: pg_db_xid_age
+    type: gauge
+    help: "XID age per database, wraparound risk (vacuum/xid_wraparound_databases.sql)"
+    key_labels: [datname]
+    values: [xid_age]
+    query: |
+      SELECT datname, age(datfrozenxid)::float8 AS xid_age
+      FROM pg_database
+
+  - metric_name: pg_db_mxid_age
+    type: gauge
+    help: "Multixact age per database (vacuum/xid_wraparound_databases.sql)"
+    key_labels: [datname]
+    values: [mxid_age]
+    query: |
+      SELECT datname, mxid_age(datminmxid)::float8 AS mxid_age
+      FROM pg_database
+
+  # --- per-table: активность и HOT (tables/seq_scan_heavy_tables.sql, tables/hot_update_ratio.sql) ---
+  - metric_name: pg_table_activity_total
+    type: counter
+    help: "Per-table access/write counters: seq vs idx scans = index candidates (tables/seq_scan_heavy_tables.sql), hot_upd vs upd = HOT ratio (tables/hot_update_ratio.sql)"
+    key_labels: [datname, schemaname, relname]
+    value_label: op
+    values: [seq_scan, seq_tup_read, idx_scan, tup_ins, tup_upd, tup_del, tup_hot_upd]
+    query: |
+      SELECT current_database() AS datname, s.schemaname, s.relname,
+             s.seq_scan::float8 AS seq_scan, s.seq_tup_read::float8 AS seq_tup_read,
+             COALESCE(s.idx_scan, 0)::float8 AS idx_scan,
+             s.n_tup_ins::float8 AS tup_ins, s.n_tup_upd::float8 AS tup_upd,
+             s.n_tup_del::float8 AS tup_del, s.n_tup_hot_upd::float8 AS tup_hot_upd
+      FROM pg_stat_user_tables s
+      ORDER BY pg_total_relation_size(s.relid) DESC
+      LIMIT 20
+
+  # --- per-table: живые/мёртвые строки (tables/dead_tuples.sql) ---
+  - metric_name: pg_table_tuples
+    type: gauge
+    help: "Live/dead tuples per table (tables/dead_tuples.sql)"
+    key_labels: [datname, schemaname, relname]
+    value_label: kind
+    values: [live, dead]
+    query: |
+      SELECT current_database() AS datname, schemaname, relname,
+             n_live_tup::float8 AS live, n_dead_tup::float8 AS dead
+      FROM pg_stat_user_tables
+      ORDER BY pg_total_relation_size(relid) DESC
+      LIMIT 20
+
+  # --- per-table: давность вакуума/анализа (vacuum/last_vacuum_analyze.sql); -1 = никогда ---
+  - metric_name: pg_table_maintenance_age_seconds
+    type: gauge
+    help: "Seconds since last (auto)vacuum / (auto)analyze; -1 = never (vacuum/last_vacuum_analyze.sql)"
+    key_labels: [datname, schemaname, relname]
+    value_label: kind
+    values: [vacuum, analyze]
+    query: |
+      SELECT current_database() AS datname, schemaname, relname,
+             COALESCE(EXTRACT(EPOCH FROM (now() - GREATEST(last_vacuum, last_autovacuum))), -1)::float8 AS vacuum,
+             COALESCE(EXTRACT(EPOCH FROM (now() - GREATEST(last_analyze, last_autoanalyze))), -1)::float8 AS analyze
+      FROM pg_stat_user_tables
+      ORDER BY pg_total_relation_size(relid) DESC
+      LIMIT 20
+
+  # --- сколько таблиц ждут автовакуума (vacuum/tables_need_vacuum.sql, глобальные пороги) ---
+  - metric_name: pg_tables_need_vacuum
+    type: gauge
+    help: "Tables past the autovacuum dead-tuple threshold (vacuum/tables_need_vacuum.sql)"
+    values: [cnt]
+    query: |
+      SELECT COUNT(*)::float8 AS cnt
+      FROM pg_stat_user_tables s
+      JOIN pg_class c ON c.oid = s.relid
+      WHERE s.n_dead_tup > current_setting('autovacuum_vacuum_threshold')::float8
+            + current_setting('autovacuum_vacuum_scale_factor')::float8 * GREATEST(c.reltuples, 0)
+
+  # --- прогресс работающих vacuum (vacuum/vacuum_progress.sql, fixes.txt MEDIUM):
+  #     "вакуум по таблице X идёт 6 часов" видно только отсюда ---
+  # вью КЛАСТЕРНАЯ (строки вакуумов всех баз), а relid резолвится только в
+  # локальном каталоге — чужие базы помечаются '(remote-db)' вместо ложного
+  # имени; MAX/GROUP BY гасит дубли схлопнувшихся строк
+  - metric_name: pg_vacuum_progress_pct
+    type: gauge
+    help: "Running (auto)vacuum progress percent by db/table/phase (pg_stat_progress_vacuum)"
+    key_labels: [datname, schemaname, relname, phase]
+    values: [pct]
+    query: |
+      SELECT p.datname,
+             CASE WHEN p.datname = current_database()
+                  THEN COALESCE(n.nspname, '(unknown)') ELSE '(remote-db)' END AS schemaname,
+             CASE WHEN p.datname = current_database()
+                  THEN COALESCE(c.relname, '(unknown)') ELSE '(remote-db)' END AS relname,
+             p.phase,
+             MAX(COALESCE(100.0 * p.heap_blks_scanned / NULLIF(p.heap_blks_total, 0), 0))::float8 AS pct
+      FROM pg_stat_progress_vacuum p
+      LEFT JOIN pg_class c ON c.oid = p.relid AND p.datname = current_database()
+      LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
+      GROUP BY 1, 2, 3, 4
+      UNION ALL
+      SELECT current_database(), '(idle)', '(idle)', 'none', 0::float8
+      WHERE NOT EXISTS (SELECT 1 FROM pg_stat_progress_vacuum)

@@ -1,0 +1,52 @@
+# метрики со стороны standby — адаптации replication/standby_lag.sql,
+# wal_receiver_status и standby_conflicts из репозитория
+collector_name: pg_standby
+
+metrics:
+  - metric_name: pg_standby_up
+    type: gauge
+    help: "Exporter can reach the standby"
+    values: [up]
+    query: SELECT 1::float8 AS up
+
+  - metric_name: pg_standby_is_in_recovery
+    type: gauge
+    help: "1 = standby mode; drop to 0 = promotion happened"
+    values: [v]
+    query: SELECT pg_is_in_recovery()::int::float8 AS v
+
+  # закрывает слепую зону из gap-анализа: мёртвый walreceiver при догнанном replay
+  # выглядит в standby_lag.sql как нулевой лаг; здесь он честный 0
+  - metric_name: pg_standby_wal_receiver_up
+    type: gauge
+    help: "1 = walreceiver process is streaming; 0 = streaming outage (replication/wal_receiver_status.sql)"
+    values: [v]
+    query: SELECT COUNT(*)::float8 AS v FROM pg_stat_wal_receiver
+
+  - metric_name: pg_standby_replay_gap_bytes
+    type: gauge
+    help: "Received but not yet replayed WAL (replication/standby_lag.sql)"
+    values: [v]
+    query: |
+      SELECT COALESCE(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn()), 0)::float8 AS v
+
+  # растёт и при простое primary (нет транзакций = нечего доигрывать) — у демо нагрузка постоянная
+  - metric_name: pg_standby_replay_delay_seconds
+    type: gauge
+    help: "Seconds since last replayed transaction (replication/standby_lag.sql)"
+    values: [v]
+    query: |
+      SELECT COALESCE(EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())), 0)::float8 AS v
+
+  - metric_name: pg_standby_conflicts_total
+    type: counter
+    help: "Recovery conflicts by type, cluster-wide (replication/standby_conflicts.sql)"
+    value_label: kind
+    values: [tablespace, lock, snapshot, bufferpin, deadlock]
+    query: |
+      SELECT COALESCE(SUM(confl_tablespace), 0)::float8 AS tablespace,
+             COALESCE(SUM(confl_lock), 0)::float8 AS lock,
+             COALESCE(SUM(confl_snapshot), 0)::float8 AS snapshot,
+             COALESCE(SUM(confl_bufferpin), 0)::float8 AS bufferpin,
+             COALESCE(SUM(confl_deadlock), 0)::float8 AS deadlock
+      FROM pg_stat_database_conflicts

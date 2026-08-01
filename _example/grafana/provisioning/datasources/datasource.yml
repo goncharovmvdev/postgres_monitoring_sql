@@ -1,0 +1,38 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  # прямые SQL-датасорсы для «живых» панелей (блокировочная топология в pg-layered):
+  # граф pid -> pid нельзя дёшево положить в метрики — читается из PG при просмотре.
+  # Роль monitoring уже защищена таймаутами (statement_timeout 5s / lock_timeout 1s)
+  - name: PostgreSQL primary
+    type: postgres
+    uid: pg-primary
+    access: proxy
+    url: postgres:5432
+    user: monitoring
+    jsonData:
+      database: postgres
+      sslmode: disable
+      postgresVersion: 1500   # максимум, известный Grafana 11; влияет только на подсказки
+    secureJsonData:
+      password: monitoring
+
+  - name: PostgreSQL standby
+    type: postgres
+    uid: pg-standby
+    access: proxy
+    url: replica:5432
+    user: monitoring
+    jsonData:
+      database: postgres
+      sslmode: disable
+      postgresVersion: 1500
+    secureJsonData:
+      password: monitoring

@@ -1,0 +1,77 @@
+# размеры и гигиена (fixes.txt ИНТЕРВАЛЫ: 300s):
+# pg_database_size/pg_total_relation_size обходят файлы и берут AccessShareLock —
+# на 15s это и лишняя нагрузка, и риск встать за DDL (см. таймауты роли monitoring)
+collector_name: pg_objects_slow
+min_interval: 300s
+
+metrics:
+  - metric_name: pg_db_size_bytes
+    type: gauge
+    help: "Database size in bytes (databases/database_sizes.sql)"
+    key_labels: [datname]
+    values: [size_bytes]
+    query: |
+      SELECT datname, pg_database_size(oid)::float8 AS size_bytes
+      FROM pg_database
+      WHERE NOT datistemplate
+
+  # --- per-table: размер (tables/table_sizes.sql); datname+schemaname —
+  #     см. комментарий про коллизии relname в шапке pg_objects.yml ---
+  - metric_name: pg_table_size_bytes
+    type: gauge
+    help: "Top-20 tables by size, split by part (tables/table_sizes.sql)"
+    key_labels: [datname, schemaname, relname]
+    value_label: part
+    values: [total, index, toast]
+    query: |
+      SELECT current_database() AS datname, n.nspname AS schemaname, c.relname,
+             pg_total_relation_size(c.oid)::float8 AS total,
+             pg_indexes_size(c.oid)::float8 AS index,
+             COALESCE(pg_total_relation_size(c.reltoastrelid), 0)::float8 AS toast
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE c.relkind = 'r' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+      ORDER BY pg_total_relation_size(c.oid) DESC
+      LIMIT 20
+
+  # --- индексная гигиена (indexes/unused_indexes.sql, invalid_indexes.sql) ---
+  - metric_name: pg_unused_indexes
+    type: gauge
+    help: "Indexes with zero scans, excl. PK/unique (indexes/unused_indexes.sql)"
+    value_label: kind
+    values: [count, bytes]
+    query: |
+      SELECT COUNT(*)::float8 AS count,
+             COALESCE(SUM(pg_relation_size(s.indexrelid)), 0)::float8 AS bytes
+      FROM pg_stat_user_indexes s
+      JOIN pg_index i ON i.indexrelid = s.indexrelid
+      WHERE s.idx_scan = 0 AND NOT i.indisunique AND NOT i.indisprimary
+
+  - metric_name: pg_invalid_indexes
+    type: gauge
+    help: "Invalid indexes count (indexes/invalid_indexes.sql)"
+    values: [cnt]
+    query: |
+      SELECT COUNT(*)::float8 AS cnt
+      FROM pg_index
+      WHERE NOT indisvalid
+
+  # --- исчерпание sequences (tables/sequence_exhaustion.sql) ---
+  # ТРЕБУЕТ грантов: pg_sequences.last_value = NULL без SELECT/USAGE на sequence
+  # (см. init/01_monitoring.sql); NULL здесь = sequence ещё не использовалась.
+  # top-5 С ИМЕНЕМ: безымянный "worst %" не actionable — не видно, какую
+  # sequence чинить (мигрировать на bigint / setval)
+  - metric_name: pg_sequence_used_pct
+    type: gauge
+    help: "Top-5 sequences by usage percent (tables/sequence_exhaustion.sql); needs SELECT on sequences"
+    key_labels: [datname, schemaname, seqname]
+    values: [pct]
+    query: |
+      (SELECT current_database() AS datname, schemaname, sequencename AS seqname,
+              (100.0 * COALESCE(last_value, 0)::numeric / NULLIF(max_value, 0))::float8 AS pct
+       FROM pg_sequences
+       ORDER BY pct DESC
+       LIMIT 5)
+      UNION ALL
+      SELECT current_database(), '(none)', '(none)', 0::float8
+      WHERE NOT EXISTS (SELECT 1 FROM pg_sequences)

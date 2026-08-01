@@ -1,0 +1,83 @@
+ОТКАТ: top-N по кумулятивной статистике
+=======================================
+Относится к fixes.txt, раздел HIGH, пункт "ИСПРАВИТЬ top-N".
+Состав изменения, которое откатываем:
+  (1) pg_statements.yml: LIMIT 10 -> LIMIT 50..100 у pg_top_query_*,
+      pg_top_wal_query_*, pg_top_temp_query_*, pg_wait_query_profile_total
+  (2) min_interval: 60s на этих метриках
+  (3) новая метрика pg_statements_dealloc (pg_stat_statements_info)
+  (4) регламентные сбросы: pg_stat_statements_reset(),
+      pg_wait_sampling_reset_profile(), pg_stat_kcache_reset()
+      (pg_cron, init/07_maintenance_cron.sql, еженедельно)
+  (5) дашборды: панели top-* оставлены на topk(10, rate(...)) — их
+      изменение не требовалось, откат их не трогает
+
+КОГДА ОТКАТЫВАТЬ (триггеры)
+---------------------------
+- Рост head series / памяти Prometheus сверх бюджета после раскатки
+  (проверка: count({__name__=~"pg_top_query_.*|pg_query_.*"})).
+- scrape_duration_seconds{job=~"sql-.*"} приблизился к scrape_timeout (10s).
+- Заметный рост времени выполнения коллекторских запросов на проде
+  (pg_stat_statements сам стал заметен в top по времени).
+- Инцидент, коррелирующий по времени с изменением, до выяснения причин.
+
+ПРОЦЕДУРА ОТКАТА
+----------------
+Шаг 1. Коллектор.
+  git revert <commit>  (или вручную вернуть в pg_statements.yml:
+  LIMIT 10, убрать min_interval, удалить метрику pg_statements_dealloc).
+  Перезапуск: docker compose restart sql-exporter
+  (не полагаться на hot-reload; рестарт экспортёра не трогает базу).
+
+Шаг 2. Отключить регламентные сбросы.
+  Primary (pg_cron, init/07_maintenance_cron.sql):
+    SELECT cron.unschedule('pgss_weekly_reset');
+    SELECT cron.unschedule('wait_profile_weekly_reset');
+    SELECT cron.unschedule('kcache_weekly_reset');
+  Реплика (контейнер): docker compose rm -sf replica-maintenance
+  Джобы pg_cron выполняются только на primary (на hot standby он пассивен);
+  после failover проверить cron.job на новом primary.
+
+Шаг 3. Prometheus — действий не требуется.
+  Лишние серии (queryid за пределами top-10) перестанут обновляться,
+  через 5 мин станут stale и уйдут из instant-запросов; из истории
+  исчезнут сами по истечении retention. Принудительная чистка нужна
+  только при жёстком дефиците диска:
+    POST /api/v1/admin/tsdb/delete_series?match[]=pg_top_query_exec_seconds_total
+  (требует --web.enable-admin-api; по умолчанию НЕ включён — и не надо).
+
+Шаг 4. Дашборды.
+  Изменений не требуется: topk(10, rate(...)) корректен при любом
+  количестве входных серий. Если добавлялась панель по
+  pg_statements_dealloc — скрыть/удалить её.
+
+ЧТО НЕОБРАТИМО
+--------------
+- Уже выполненные pg_stat_statements_reset(): накопленные с прошлого
+  старта суммы потеряны безвозвратно. Это влияет ТОЛЬКО на сравнения
+  "total с начала времён"; все панели на rate() корректны, т.к. rate
+  переживает reset как обычный counter reset.
+- То же для pg_wait_sampling_reset_profile().
+- История в TSDB за период работы изменения остаётся как есть:
+  в старом диапазоне графики показывают 50-100 серий, в новом — 10.
+  На стыке отката возможен один артефактный всплеск rate() из-за
+  массового обрыва серий — игнорировать.
+
+ПРОВЕРКА ПОСЛЕ ОТКАТА
+---------------------
+1. min(up{job=~"sql-.*"}) == 1, scrape_duration_seconds вернулся к базовому.
+2. count(pg_top_query_exec_seconds_total{job="primary"}) == 10
+   (через 5-10 мин после рестарта, когда старые серии устареют).
+3. Панели 505/506/509-511 и "Top запросов по ожиданиям" рисуют данные
+   без дыр начиная с момента отката.
+4. В pg_stat_statements нет заданий сброса:
+   SELECT * FROM cron.job;  (если использовался pg_cron)
+
+ЦЕНА ОТКАТА (зафиксировать осознанно)
+-------------------------------------
+Возвращаются оба исходных дефекта (fixes.txt, HIGH "ИСПРАВИТЬ top-N"):
+- lifetime-bias: новый тяжёлый запрос не виден в top-10 часами;
+- churn серий top-10 -> рваный rate(), ложные "запрос остановился".
+Откат — это возврат к известно-худшему поведению ради стабильности
+сбора; повторную раскатку планировать с уменьшенным N (например, 25)
+или увеличенным min_interval (120s), а не отказом от идеи.

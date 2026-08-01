@@ -1,0 +1,143 @@
+services:
+  # ---------- мониторируемая база + нагрузка ----------
+  postgres:
+    restart: unless-stopped
+    build: ./postgres
+    image: example-postgres:17
+    # вся конфигурация — в статичном postgres/postgresql.conf (там же ссылка на pg_hba);
+    # sync-репликация — в init/05_sync_replication.sql (ALTER SYSTEM), см. комментарии в файлах
+    command:
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+    environment:
+      # отдельной базы нет: нагрузка и мониторинг живут в дефолтной postgres
+      POSTGRES_PASSWORD: postgres
+      # контроль повреждений страниц: без этого pg_checksum_failures_total
+      # декоративен; overhead — единицы % CPU на пути записи
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # синхронная физическая реплика (standby): базовый бэкап при первом старте
+  replica:
+    restart: unless-stopped
+    image: example-postgres:17   # собирается сервисом postgres
+    user: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./replica/entrypoint.sh:/replica_entrypoint.sh:ro
+    entrypoint: ["sh", "/replica_entrypoint.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+  # генератор нагрузки (~50 tps), чтобы на дашборде были живые данные;
+  # сам сценарий транзакции — в load/load.sql (pgbench -f)
+  load:
+    restart: unless-stopped
+    image: postgres:17
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./load:/load:ro
+    # схему и данные pgbench создаёт init/04_pgbench_schema.sql при initdb;
+    # здесь остался только неустранимый шелл: ожидание готовности и цикл процессов
+    entrypoint:
+      - sh
+      - -c
+      - |
+        until pg_isready -h postgres -U postgres -d postgres >/dev/null 2>&1; do sleep 1; done
+        while true; do
+            pgbench -h postgres -U postgres -f /load/load.sql -c 2 -j 1 -T 55 -R 50 postgres
+            sleep 5
+        done
+
+  # Регламентный сброс кумулятивной статистики (fixes.txt HIGH "ИСПРАВИТЬ top-N"):
+  # primary — через pg_cron (init/07_maintenance_cron.sql); реплика — контейнером
+  # ниже, потому что pg_cron на hot standby джобы не выполняет, а pgss/kcache/
+  # wait-профиль у реплики СВОИ. Откат — rollback_cumulative_stats.txt
+  replica-maintenance:
+    restart: unless-stopped
+    image: postgres:17
+    depends_on:
+      replica:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+            sleep 604800   # раз в неделю
+            psql -h replica -U postgres -d postgres \
+                 -c "SELECT pg_stat_statements_reset();" \
+                 -c "SELECT pg_wait_sampling_reset_profile();" \
+                 -c "SELECT pg_stat_kcache_reset();" || true
+        done
+
+  # ---------- слой ОС ----------
+  # В демо node_exporter видит Linux-VM Docker Desktop; на проде (Linux) добавьте:
+  #   volumes: ["/:/host:ro,rslave"]  и  command: ["--path.rootfs=/host"]
+  node-exporter:
+    restart: unless-stopped
+    image: prom/node-exporter:v1.8.2
+    ports:
+      - "9100:9100"
+
+  # ---------- слои инстанса, баз/объектов и workload: всё через sql_exporter ----------
+  # (по образцу pgMonitor v5: без postgres_exporter, имена метрик совместимы с ним)
+  sql-exporter:
+    restart: unless-stopped
+    image: burningalchemist/sql_exporter:0.17.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - -config.file=/etc/sql_exporter/sql_exporter.yml
+    volumes:
+      - ./sql_exporter:/etc/sql_exporter:ro
+    ports:
+      - "9399:9399"
+
+  # Планы auto_explain остаются в docker logs (example-postgres-1 / example-replica-1):
+  # поиск по queryid — grep "qid=<queryid>" (лейбл %Q в log_line_prefix) или по
+  # "Query Identifier" внутри плана (auto_explain.log_verbose)
+
+  # ---------- хранение и визуализация ----------
+  prometheus:
+    restart: unless-stopped
+    image: prom/prometheus:v2.53.1
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+
+  grafana:
+    restart: unless-stopped
+    image: grafana/grafana:11.1.0
+    depends_on:
+      - prometheus
+    environment:
+      # демо-режим без логина; вне localhost уберите анонимный доступ
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3002:3000"
