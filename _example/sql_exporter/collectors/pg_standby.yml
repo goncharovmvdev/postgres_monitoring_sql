@@ -2,51 +2,76 @@
 # wal_receiver_status и standby_conflicts из репозитория
 collector_name: pg_standby
 
+# «жив ли standby и догоняет ли» — режим, поток walreceiver, отставание в байтах
+# и секундах одним чтением. Отдельно оставлены: pg_standby_up (изолированный
+# пробник живости — не расширять) и conflicts (другой вопрос: «мешает ли replay
+# запросам» — жертвы среди читателей, а не здоровье репликации)
+queries:
+  # изолированный пробник живости standby — не расширять
+  - query_name: q_standby_up
+    query: |
+      SELECT
+        1::float8 AS up
+
+  - query_name: q_standby_state
+    query: |
+      SELECT
+        pg_is_in_recovery()::int::float8 AS in_recovery,
+        (
+          SELECT
+            COUNT(*)
+          FROM pg_stat_wal_receiver
+        )::float8 AS receiver_up,
+        COALESCE(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn()), 0)::float8 AS replay_gap_bytes,
+        COALESCE(EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())), 0)::float8        AS replay_delay_seconds
+
+  - query_name: q_standby_conflicts
+    query: |
+      SELECT
+        COALESCE(SUM(confl_tablespace), 0)::float8 AS tablespace,
+        COALESCE(SUM(confl_lock), 0)::float8       AS lock,
+        COALESCE(SUM(confl_snapshot), 0)::float8   AS snapshot,
+        COALESCE(SUM(confl_bufferpin), 0)::float8  AS bufferpin,
+        COALESCE(SUM(confl_deadlock), 0)::float8   AS deadlock
+      FROM pg_stat_database_conflicts
+
 metrics:
   - metric_name: pg_standby_up
     type: gauge
     help: "Exporter can reach the standby"
     values: [up]
-    query: SELECT 1::float8 AS up
+    query_ref: q_standby_up
 
   - metric_name: pg_standby_is_in_recovery
     type: gauge
     help: "1 = standby mode; drop to 0 = promotion happened"
-    values: [v]
-    query: SELECT pg_is_in_recovery()::int::float8 AS v
+    values: [in_recovery]
+    query_ref: q_standby_state
 
   # закрывает слепую зону из gap-анализа: мёртвый walreceiver при догнанном replay
   # выглядит в standby_lag.sql как нулевой лаг; здесь он честный 0
   - metric_name: pg_standby_wal_receiver_up
     type: gauge
     help: "1 = walreceiver process is streaming; 0 = streaming outage (replication/wal_receiver_status.sql)"
-    values: [v]
-    query: SELECT COUNT(*)::float8 AS v FROM pg_stat_wal_receiver
+    values: [receiver_up]
+    query_ref: q_standby_state
 
   - metric_name: pg_standby_replay_gap_bytes
     type: gauge
     help: "Received but not yet replayed WAL (replication/standby_lag.sql)"
-    values: [v]
-    query: |
-      SELECT COALESCE(pg_wal_lsn_diff(pg_last_wal_receive_lsn(), pg_last_wal_replay_lsn()), 0)::float8 AS v
+    values: [replay_gap_bytes]
+    query_ref: q_standby_state
 
   # растёт и при простое primary (нет транзакций = нечего доигрывать) — у демо нагрузка постоянная
   - metric_name: pg_standby_replay_delay_seconds
     type: gauge
     help: "Seconds since last replayed transaction (replication/standby_lag.sql)"
-    values: [v]
-    query: |
-      SELECT COALESCE(EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())), 0)::float8 AS v
+    values: [replay_delay_seconds]
+    query_ref: q_standby_state
 
   - metric_name: pg_standby_conflicts_total
     type: counter
     help: "Recovery conflicts by type, cluster-wide (replication/standby_conflicts.sql)"
     value_label: kind
     values: [tablespace, lock, snapshot, bufferpin, deadlock]
-    query: |
-      SELECT COALESCE(SUM(confl_tablespace), 0)::float8 AS tablespace,
-             COALESCE(SUM(confl_lock), 0)::float8 AS lock,
-             COALESCE(SUM(confl_snapshot), 0)::float8 AS snapshot,
-             COALESCE(SUM(confl_bufferpin), 0)::float8 AS bufferpin,
-             COALESCE(SUM(confl_deadlock), 0)::float8 AS deadlock
-      FROM pg_stat_database_conflicts
+    query_ref: q_standby_conflicts

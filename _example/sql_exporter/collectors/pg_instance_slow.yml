@@ -1,31 +1,50 @@
-# медленные метрики инстанса: сканы каталогов — не для 15s
-# (fixes.txt ИНТЕРВАЛЫ: pg_ls_waldir 60s, архиваторная очередь 1m)
 collector_name: pg_instance_slow
 min_interval: 60s
+
+# «жив ли архиватор» — глубина очереди .ready и давность последнего успеха:
+# два симптома одного отказа (failed_count==0 при висящем архиваторе — ложный
+# покой). pg_wal_directory_size отдельно: «сколько диска ест WAL» — другой
+# вопрос (маршрут «место кончается»), и второй каталог-скан в том же
+# statement — лишний риск под общий statement_timeout
+queries:
+  # каталог-скан pg_wal — не для 15s, поэтому коллектор на min_interval 60s
+  - query_name: q_wal_dir_size
+    query: |
+      SELECT
+        COALESCE(SUM(size), 0)::float8 AS v
+      FROM pg_ls_waldir()
+
+  - query_name: q_archiver_queue
+    query: |
+      SELECT
+        (
+          SELECT
+            COUNT(*)
+          FROM pg_ls_archive_statusdir()
+          WHERE name LIKE '%.ready'
+        )::float8 AS pending,
+        (
+          SELECT
+            COALESCE(EXTRACT(EPOCH FROM (now() - last_archived_time)), -1)
+          FROM pg_stat_archiver
+        )::float8 AS last_age
 
 metrics:
   - metric_name: pg_wal_directory_size_bytes
     type: gauge
     help: "pg_wal directory size (wal/wal_directory_size.sql); directory scan, keep at 60s+"
     values: [v]
-    query: SELECT COALESCE(SUM(size), 0)::float8 AS v FROM pg_ls_waldir()
+    query_ref: q_wal_dir_size
 
-  # глубина очереди архиватора: failed_count==0 при ВИСЯЩЕМ архиваторе — ложный
-  # покой, а .ready-файлы копятся (fixes.txt MEDIUM)
   - metric_name: pg_archiver_pending_wals
     type: gauge
     help: "WAL segments waiting to be archived (.ready files in archive_status)"
-    values: [cnt]
-    query: |
-      SELECT COUNT(*)::float8 AS cnt
-      FROM pg_ls_archive_statusdir()
-      WHERE name LIKE '%.ready'
+    values: [pending]
+    query_ref: q_archiver_queue
 
   # -1 = ещё ничего не архивировалось (или standby без archive_mode=always)
   - metric_name: pg_archiver_last_archived_age_seconds
     type: gauge
     help: "Seconds since last successful WAL archive; -1 = never"
-    values: [v]
-    query: |
-      SELECT COALESCE(EXTRACT(EPOCH FROM (now() - last_archived_time)), -1)::float8 AS v
-      FROM pg_stat_archiver
+    values: [last_age]
+    query_ref: q_archiver_queue

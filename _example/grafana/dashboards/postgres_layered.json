@@ -9,9 +9,9 @@
   },
   "panels": [
     {
-      "id": 100,
+      "id": 200,
       "type": "row",
-      "title": "1. Hardware / Гипервизор",
+      "title": "OS",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -21,45 +21,17 @@
       "collapsed": false
     },
     {
-      "id": 101,
-      "type": "timeseries",
-      "title": "CPU steal, % (сигнал гипервизора)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 9,
-        "x": 0,
-        "y": 1
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "avg(rate(node_cpu_seconds_total{host=~\"$host\",mode=\"steal\"}[1m])) * 100",
-          "legendFormat": "steal",
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "id": 102,
       "type": "timeseries",
-      "title": "PSI: доля времени в ожидании ресурса (cpu / io / memory)",
+      "title": "Pressure Stall (PSI)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 9,
-        "x": 9,
+        "w": 24,
+        "x": 0,
         "y": 1
       },
       "fieldConfig": {
@@ -85,39 +57,13 @@
           "legendFormat": "memory",
           "refId": "C"
         }
-      ]
-    },
-    {
-      "id": 103,
-      "type": "text",
-      "title": "Что здесь в проде",
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 18,
-        "y": 1
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "**Bare metal:** SMART (smartctl_exporter), ECC-ошибки, RAID BBU/IPMI.\n\n**Облако/VM:** steal, burst-кредиты диска, троттлинг IOPS — метрики провайдера (CloudWatch и т.п.).\n\nВ демо доступны только steal и PSI."
-      }
-    },
-    {
-      "id": 200,
-      "type": "row",
-      "title": "2. ОС",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 8
-      },
-      "collapsed": false
+      ],
+      "description": "Watch: sustained plateaus, not spikes. OK: cpu/io < 5%, memory ≈ 0. Fix: grow infra(?)"
     },
     {
       "id": 201,
       "type": "timeseries",
-      "title": "CPU по режимам, %",
+      "title": "CPU Usage",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -126,7 +72,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 9
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -149,12 +95,13 @@
             "uid": "prometheus"
           }
         }
-      ]
+      ],
+      "description": "Watch: user/system/iowait and the steal line. OK: headroom below 100%, steal < 2–5%. Fix: user = Top Queries by CPU; system = use / configure properly a pooler; steal = hypervisor"
     },
     {
       "id": 202,
       "type": "timeseries",
-      "title": "Load average",
+      "title": "Load Average",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -163,7 +110,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 9
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -208,12 +155,13 @@
             "uid": "prometheus"
           }
         }
-      ]
+      ],
+      "description": "Watch: load1 vs the cores line. OK: load < cores. Fix: with low CPU% — processes queue on disk -> disk panels; with high CPU% -> CPU Usage"
     },
     {
       "id": 203,
       "type": "timeseries",
-      "title": "Память: доступно, %",
+      "title": "Memory Available",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -222,7 +170,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 9
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -241,12 +189,13 @@
             "uid": "prometheus"
           }
         }
-      ]
+      ],
+      "description": "Watch: trend (MemAvailable = free + reclaimable cache; shared_buffers and hugepages excluded). OK: > 15–20%. Fix: pooler / lower work_mem * connections, add RAM; cross-check PSI memory — available can lie, PSI does not."
     },
     {
       "id": 206,
       "type": "timeseries",
-      "title": "Диск: латентность, мс",
+      "title": "Disk Latency",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -255,7 +204,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 17
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -283,21 +232,21 @@
           }
         }
       ],
-      "description": "Per-device: деградация одного тома (например, отдельного диска под WAL) не растворяется в среднем по всем устройствам."
+      "description": "Watch: per device, the WAL volume separately. OK: SSD/NVMe single-digit ms, > 10–20 ms is bad. Fix: growth at unchanged IOPS — disk"
     },
     {
       "id": 205,
       "type": "timeseries",
-      "title": "Диск: IOPS",
+      "title": "Disk IOPS",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 8,
-        "w": 6,
+        "w": 12,
         "x": 12,
-        "y": 17
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -324,45 +273,13 @@
             "uid": "prometheus"
           }
         }
-      ]
-    },
-    {
-      "id": 207,
-      "type": "timeseries",
-      "title": "Диск: утилизация, %",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 18,
-        "y": 17
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "max": 100
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(node_disk_io_time_seconds_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[1m]) * 100",
-          "legendFormat": "{{device}}",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ]
+      ],
+      "description": "Watch: proximity to the volume limit, sawtooth in checkpoint rhythm. OK: < ~70% of the limit. Fix: find the consumer (pg_stat_io, tops), make longer checkpoints, raise volume class/size"
     },
     {
       "id": 204,
       "type": "timeseries",
-      "title": "Диск: свободно, % (алерт-кандидат №1)",
+      "title": "Disk Space Free",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -371,7 +288,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 25
+        "y": 24
       },
       "fieldConfig": {
         "defaults": {
@@ -390,12 +307,13 @@
             "uid": "prometheus"
           }
         }
-      ]
+      ],
+      "description": "Watch: worst volume trend — WAL/temp can eat space rapidly. OK: > 20–25%. Fix: WAL Directory Size (slot? archiver?) -> temp spills (Top Queries by Temp) -> bloat (pg_repack)"
     },
     {
       "id": 613,
       "type": "timeseries",
-      "title": "Диск: средняя глубина очереди (aqu-sz)",
+      "title": "Disk Queue Depth",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -404,7 +322,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 25
+        "y": 24
       },
       "fieldConfig": {
         "defaults": {
@@ -423,12 +341,12 @@
           }
         }
       ],
-      "description": "rate(io_time_weighted) = среднее число запросов в очереди и обслуживании (aqu-sz из iostat). Растёт раньше, чем латентность."
+      "description": "Watch: aqu-sz growth — it leads latency growth. OK: SATA/SAS SSD single digits, NVMe tens. Fix: as Disk Latency — find and spread the load, or a faster disk"
     },
     {
       "id": 610,
       "type": "timeseries",
-      "title": "Swap I/O, байт/с",
+      "title": "Swap I/O",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -437,7 +355,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 25
+        "y": 24
       },
       "fieldConfig": {
         "defaults": {
@@ -465,12 +383,12 @@
           }
         }
       ],
-      "description": "pswpin/pswpout × 4КиБ. Устойчивый swap-out = памяти уже не хватает: латентность деградирует задолго до OOM."
+      "description": "Watch: sustained swap-out (swap-in is just reading back). OK: 0. Fix: memory shortage — see Memory Available and PSI; vm.swappiness 1–10"
     },
     {
       "id": 611,
       "type": "timeseries",
-      "title": "Память: занятый swap / dirty / writeback",
+      "title": "Swap / Dirty Memory",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -479,7 +397,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 32
+        "y": 31
       },
       "fieldConfig": {
         "defaults": {
@@ -516,12 +434,12 @@
           }
         }
       ],
-      "description": "Рост Dirty при медленном диске — надвигающийся writeback-шторм; занятый swap не обнуляется сам даже после снятия давления."
+      "description": "Watch: dirty growth on a slow disk = incoming writeback storm; used swap never shrinks by itself. OK: dirty well below vm.dirty_bytes. Fix: lower vm.dirty_*_bytes, faster disk, spread checkpoints"
     },
     {
       "id": 612,
       "type": "stat",
-      "title": "OOM kills (10 мин)",
+      "title": "OOM Kills",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -530,7 +448,7 @@
         "h": 7,
         "w": 4,
         "x": 8,
-        "y": 32
+        "y": 31
       },
       "fieldConfig": {
         "defaults": {
@@ -558,12 +476,12 @@
           "legendFormat": ""
         }
       ],
-      "description": "Любое значение > 0 — процессы убивает ядро; OOM-kill бэкенда PostgreSQL = crash-recovery всего инстанса (см. Uptime в слое 3)."
+      "description": "Watch: any value > 0. OK: strictly 0 — an OOM-killed backend = crash-recovery of the whole instance. Fix: victim in dmesg; vm.overcommit_memory=2"
     },
     {
       "id": 208,
       "type": "timeseries",
-      "title": "Сеть, байт/с",
+      "title": "Network Traffic",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -572,7 +490,7 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 32
+        "y": 31
       },
       "fieldConfig": {
         "defaults": {
@@ -599,12 +517,13 @@
             "uid": "prometheus"
           }
         }
-      ]
+      ],
+      "description": "Watch: NIC ceiling; spikes = replication/backups. OK: < ~70% of bandwidth. Fix: move backups/replication in time or to another interface; faster NIC"
     },
     {
       "id": 209,
       "type": "timeseries",
-      "title": "Сеть: ошибки и дропы, /с",
+      "title": "Network Errors",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -613,7 +532,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 32
+        "y": 31
       },
       "fieldConfig": {
         "defaults": {
@@ -642,24 +561,242 @@
           "legendFormat": "tx drop",
           "refId": "D"
         }
-      ]
+      ],
+      "description": "Watch: any sustained non-zero rate. OK: 0. Fix: driver/cable/MTU/ring buffers (ethtool) — infrastructure"
+    },
+    {
+      "id": 632,
+      "type": "table",
+      "title": "Hardware & Kernel Settings",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 15,
+        "x": 0,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 620
+              },
+              {
+                "id": "displayName",
+                "value": "параметр (рекомендация)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last *"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "значение"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "count(node_cpu_seconds_total{host=~\"$host\",mode=\"idle\"})",
+          "legendFormat": "ядер CPU",
+          "refId": "R",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "round(node_memory_MemTotal_bytes{host=~\"$host\"} / 2^30 * 10) / 10",
+          "legendFormat": "RAM всего, GiB",
+          "refId": "S",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "round(node_memory_SwapTotal_bytes{host=~\"$host\"} / 2^30 * 10) / 10",
+          "legendFormat": "swap всего, GiB (0 = swap отсутствует)",
+          "refId": "T",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_swappiness{host=~\"$host\"}",
+          "legendFormat": "vm.swappiness (реком. 1–10)",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_overcommit_memory{host=~\"$host\"}",
+          "legendFormat": "vm.overcommit_memory (реком. 2; при 0 — обязателен OOMScoreAdjust=-1000)",
+          "refId": "B",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_overcommit_ratio{host=~\"$host\"}",
+          "legendFormat": "vm.overcommit_ratio (при overcommit_memory=2: ~90)",
+          "refId": "C",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_dirty_background_bytes{host=~\"$host\"}",
+          "legendFormat": "vm.dirty_background_bytes, байт (реком. ~256MB; 0 = действует ratio)",
+          "refId": "D",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_dirty_bytes{host=~\"$host\"}",
+          "legendFormat": "vm.dirty_bytes, байт (реком. ~1GB; 0 = действует ratio)",
+          "refId": "E",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_dirty_background_ratio{host=~\"$host\"}",
+          "legendFormat": "vm.dirty_background_ratio (если *_bytes=0)",
+          "refId": "F",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_dirty_ratio{host=~\"$host\"}",
+          "legendFormat": "vm.dirty_ratio (если *_bytes=0)",
+          "refId": "G",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_zone_reclaim_mode{host=~\"$host\"}",
+          "legendFormat": "vm.zone_reclaim_mode (реком. 0)",
+          "refId": "H",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_min_free_kbytes{host=~\"$host\"}",
+          "legendFormat": "vm.min_free_kbytes",
+          "refId": "I",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_nr_hugepages{host=~\"$host\"}",
+          "legendFormat": "vm.nr_hugepages (реком. ≥ shared_memory_size_in_huge_pages — см. настройки PG, слой 2)",
+          "refId": "J",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_memory_HugePages_Total{host=~\"$host\"}",
+          "legendFormat": "HugePages_Total (meminfo, факт)",
+          "refId": "K",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_memory_HugePages_Free{host=~\"$host\"}",
+          "legendFormat": "HugePages_Free (0 при работающем PG = страницы заняты БД)",
+          "refId": "L",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_kernel_numa_balancing{host=~\"$host\"}",
+          "legendFormat": "kernel.numa_balancing (реком. 0 на multi-socket)",
+          "refId": "M",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_net_core_somaxconn{host=~\"$host\"}",
+          "legendFormat": "net.core.somaxconn (реком. ≥1024)",
+          "refId": "N",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_net_ipv4_tcp_keepalive_time{host=~\"$host\"}",
+          "legendFormat": "net.ipv4.tcp_keepalive_time, сек",
+          "refId": "O",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_net_ipv4_tcp_keepalive_intvl{host=~\"$host\"}",
+          "legendFormat": "net.ipv4.tcp_keepalive_intvl, сек",
+          "refId": "P",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_net_ipv4_tcp_keepalive_probes{host=~\"$host\"}",
+          "legendFormat": "net.ipv4.tcp_keepalive_probes",
+          "refId": "Q",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "labelsToFields": false
+          }
+        }
+      ],
+      "description": "Watch: values diverging from the recommendation in the row name; a missing row means NOT collected (no include flag or the sysctl is absent in this kernel), not 'all good'. Fix: sysctl -w + /etc/sysctl.d, never during an incident; nr_hugepages ≥ shared_memory_size_in_huge_pages (Instance Settings). Requires --collector.sysctl; net.* in the demo shows the container netns."
+    },
+    {
+      "id": 633,
+      "type": "text",
+      "title": "Manual Checks (not exported)",
+      "gridPos": {
+        "h": 9,
+        "w": 9,
+        "x": 15,
+        "y": 38
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "| что | где / реком. |\n|---|---|\n| THP | `/sys/kernel/mm/transparent_hugepage/enabled` → **never** (или madvise) |\n| I/O scheduler | `/sys/block/<dev>/queue/scheduler` → **none** (NVMe) / **mq-deadline** (SSD) |\n| readahead | `/sys/block/<dev>/queue/read_ahead_kb` → 128 OLTP / 2048–4096 аналитика |\n| CPU governor | `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor` → **performance** |\n| clocksource | `.../clocksource0/current_clocksource` → **tsc** |\n| noatime | `mount \\| grep <data-fs>` |\n| Limit*/TasksMax | `/proc/<postmaster>/limits`, `systemctl show postgresql` |\n\nПрод: снимать textfile-коллектором node_exporter (cron пишет `.prom`)."
+      }
     },
     {
       "id": 300,
       "type": "row",
-      "title": "3. Инстанс PostgreSQL",
+      "title": "PostgreSQL Instance",
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 39
+        "y": 47
       },
       "collapsed": false
     },
     {
       "id": 301,
       "type": "stat",
-      "title": "pg_up",
+      "title": "PostgreSQL Up",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -668,7 +805,7 @@
         "h": 7,
         "w": 4,
         "x": 0,
-        "y": 40
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -695,12 +832,12 @@
           "refId": "A"
         }
       ],
-      "description": "При падении БД серия pg_up исчезает из scrape, а не становится 0 — «or on() vector(0)» превращает отсутствие в красный ноль. Алерт: absent(pg_up{job=\"primary\"}). Здоровье самого сбора: up{job=~\"sql-.*\"}."
+      "description": "When the DB is down the pg_up series DISAPPEARS rather than becoming 0 — «or on() vector(0)» renders a red zero; alert on absent(pg_up). Fix: exporter/network/database — collection health is up{job=~\"sql-.*\"} (Monitoring Health)."
     },
     {
       "id": 614,
       "type": "stat",
-      "title": "Uptime PostgreSQL",
+      "title": "Uptime",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -709,7 +846,7 @@
         "h": 7,
         "w": 4,
         "x": 4,
-        "y": 40
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -737,12 +874,12 @@
           "legendFormat": ""
         }
       ],
-      "description": "pg_postmaster_start_time(): резкое падение = рестарт / crash-recovery / failover. Красное = моложе 10 минут. Раньше рестарт был виден только косвенно, как counter reset."
+      "description": "Watch: a sharp drop = restart/crash-recovery/failover (red — younger than 10 min). Fix: reason in PG logs; cross-check OOM Kills (OS)."
     },
     {
       "id": 319,
       "type": "stat",
-      "title": "Размер pg_wal",
+      "title": "WAL Directory Size",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -751,7 +888,7 @@
         "h": 7,
         "w": 4,
         "x": 8,
-        "y": 40
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -764,12 +901,13 @@
           "expr": "pg_wal_directory_size_bytes{job=~\"$db\"}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: growth beyond max_wal_size. Fix: dead slot (Replication Slots), stuck archiver (WAL Archiver), checkpoints not keeping up (Checkpoints)."
     },
     {
       "id": 302,
       "type": "timeseries",
-      "title": "Коннекты: занято vs max_connections",
+      "title": "Connections",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -778,7 +916,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -796,18 +934,14 @@
           "expr": "pg_settings_max_connections{job=~\"$db\"}",
           "legendFormat": "max_connections",
           "refId": "B"
-        },
-        {
-          "expr": "sum(pg_stat_activity_count{job=~\"$db\"})",
-          "legendFormat": "все процессы (вкл. background)",
-          "refId": "C"
         }
-      ]
+      ],
+      "description": "Watch: client backends vs max_connections. OK: < 80%. Fix: pooler; who took the slots — Connections by Role."
     },
     {
       "id": 307,
       "type": "timeseries",
-      "title": "Чекпоинты/час: timed vs requested (PG17: pg_stat_checkpointer)",
+      "title": "Checkpoints",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -816,7 +950,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 47
+        "y": 55
       },
       "fieldConfig": {
         "defaults": {
@@ -835,12 +969,13 @@
           "legendFormat": "requested/час",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: requested checkpoints appearing. OK: timed only. Fix: raise max_wal_size; who generates WAL — Top Queries by WAL."
     },
     {
       "id": 316,
       "type": "timeseries",
-      "title": "Генерация WAL: байт/с и wal_buffers_full",
+      "title": "WAL Generation",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -849,7 +984,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 47
+        "y": 55
       },
       "fieldConfig": {
         "defaults": {
@@ -895,12 +1030,12 @@
           "refId": "C"
         }
       ],
-      "description": "Рост доли FPI сразу после checkpoint = амплификация full-page writes: лечится интервалом чекпоинтов / wal_compression."
+      "description": "Watch: bytes/s, buffers_full, FPI share right after a checkpoint. Fix: buffers_full growing → raise wal_buffers; high FPI → wal_compression / less frequent checkpoints; culprit — Top Queries by WAL."
     },
     {
       "id": 312,
       "type": "timeseries",
-      "title": "Кто ПИШЕТ на диск: pg_stat_io writes+extends, байт/с",
+      "title": "Disk Writes by Backend",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -909,7 +1044,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 55
+        "y": 63
       },
       "fieldConfig": {
         "defaults": {
@@ -928,12 +1063,13 @@
           "legendFormat": "{{backend_type}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: who dominates — checkpointer/bgwriter/autovacuum/client. Fix: per culprit: spread checkpoints, vacuum cost, queries (Workload)."
     },
     {
       "id": 313,
       "type": "timeseries",
-      "title": "Кто ЧИТАЕТ с диска: pg_stat_io reads, байт/с",
+      "title": "Disk Reads by Backend",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -942,7 +1078,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 55
+        "y": 63
       },
       "fieldConfig": {
         "defaults": {
@@ -961,12 +1097,13 @@
           "legendFormat": "{{backend_type}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: client reads growing = the working set no longer fits in memory. Fix: RAM/shared_buffers; who reads — Top Queries by Buffer Misses / Disk Reads."
     },
     {
       "id": 615,
       "type": "timeseries",
-      "title": "WAL: латентность write / fsync, мс на операцию (track_wal_io_timing)",
+      "title": "WAL Latency",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -975,7 +1112,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 63
+        "y": 71
       },
       "fieldConfig": {
         "defaults": {
@@ -1003,12 +1140,12 @@
           }
         }
       ],
-      "description": "Главный драйвер commit latency при synchronous_commit/sync-реплике. Рост при прежнем rate = деградация диска под WAL: сверить с латентностью диска (слой 2) и AAS IO:WALSync (слой 5)."
+      "description": "Watch: ms/op — the main commit latency driver under sync replication. OK: fsync single-digit ms. Fix: the disk under WAL (Disk Latency, OS), separate volume, synchronous_commit."
     },
     {
       "id": 314,
       "type": "timeseries",
-      "title": "pg_stat_io: fsyncs и вытеснения буферов, /с",
+      "title": "Buffer Evictions & Bgwriter",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1017,13 +1154,30 @@
         "h": 7,
         "w": 6,
         "x": 12,
-        "y": 63
+        "y": 71
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ops"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "maxwritten_clean/мин (лимит bgwriter)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "short"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
       },
       "targets": [
         {
@@ -1035,13 +1189,19 @@
           "expr": "sum by (backend_type) (rate(pg_stat_io_ops_total{job=~\"$db\",op=\"evictions\"}[1m]))",
           "legendFormat": "evict {{backend_type}}",
           "refId": "B"
+        },
+        {
+          "expr": "rate(pg_stat_bgwriter_maxwritten_clean_total{job=~\"$db\"}[5m]) * 60",
+          "legendFormat": "maxwritten_clean/мин (лимит bgwriter)",
+          "refId": "C"
         }
-      ]
+      ],
+      "description": "Watch: evictions = pressure on shared_buffers; maxwritten_clean = bgwriter hitting its limit. Fix: raise shared_buffers, raise bgwriter_lru_maxpages."
     },
     {
       "id": 315,
       "type": "timeseries",
-      "title": "Доля времени в IO по подсистемам (track_io_timing)",
+      "title": "I/O Time by Backend",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1050,7 +1210,7 @@
         "h": 7,
         "w": 6,
         "x": 18,
-        "y": 63
+        "y": 71
       },
       "fieldConfig": {
         "defaults": {
@@ -1064,21 +1224,22 @@
           "legendFormat": "{{backend_type}} {{op}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: seconds of IO per second per subsystem (can exceed 1 — parallelism). Fix: by the dominating subsystem — checkpoints/vacuum/queries."
     },
     {
       "id": 621,
       "type": "timeseries",
-      "title": "pg_stat_io: латентность, мс/оп (сверить с диском слоя 2: диск или page cache)",
+      "title": "I/O Latency (pg_stat_io)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
+        "w": 12,
         "x": 0,
-        "y": 70
+        "y": 78
       },
       "fieldConfig": {
         "defaults": {
@@ -1097,49 +1258,22 @@
           "legendFormat": "{{backend_type}} write",
           "refId": "B"
         }
-      ]
-    },
-    {
-      "id": 622,
-      "type": "timeseries",
-      "title": "pg_stat_io по context: обслуживание (vacuum/bulk) vs normal, байт/с",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 70
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "sum by (context, op) (rate(pg_stat_io_ops_total{job=~\"$db\",op=~\"reads|writes|extends\"}[1m])) * 8192",
-          "legendFormat": "{{context}} {{op}}",
-          "refId": "A"
-        }
-      ]
+      ],
+      "description": "Watch: ms/op vs Disk Latency (OS): matches — disk-bound; much lower — the page cache is saving you. Fix: as Disk Latency."
     },
     {
       "id": 620,
       "type": "timeseries",
-      "title": "Коннекты по базе/роли (кто занял max_connections)",
+      "title": "Connections by Role",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 70
+        "w": 12,
+        "x": 12,
+        "y": 78
       },
       "fieldConfig": {
         "defaults": {
@@ -1153,21 +1287,22 @@
           "legendFormat": "{{datname}}/{{usename}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: which database/role ate the max_connections slots. Fix: pooler for the culprit, per-role connection limit."
     },
     {
       "id": 305,
       "type": "timeseries",
-      "title": "Cache hit ratio, %",
+      "title": "Cache Hit Ratio",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
+        "w": 12,
         "x": 0,
-        "y": 77
+        "y": 85
       },
       "fieldConfig": {
         "defaults": {
@@ -1183,54 +1318,21 @@
           "refId": "A"
         }
       ],
-      "description": "БД без чтений за окно [5m] не рисует линию (раньше clamp_min давал ложные 0% на тихой базе)."
-    },
-    {
-      "id": 308,
-      "type": "timeseries",
-      "title": "Bgwriter: аллокации буферов/с и упор в лимит (кто пишет байты — pg_stat_io выше)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 77
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "rate(pg_stat_bgwriter_buffers_alloc_total{job=~\"$db\"}[1m])",
-          "legendFormat": "alloc",
-          "refId": "A"
-        },
-        {
-          "expr": "rate(pg_stat_bgwriter_maxwritten_clean_total{job=~\"$db\"}[5m]) * 60",
-          "legendFormat": "maxwritten_clean/мин (лимит bgwriter)",
-          "refId": "B"
-        }
-      ]
+      "description": "Watch: a sustained DOWNWARD trend, not the level. OK: > 99% for OLTP. Fix: RAM/shared_buffers; percentages deceive — cross-check absolute Disk Reads by Backend."
     },
     {
       "id": 317,
       "type": "timeseries",
-      "title": "Доля времени записи: чекпоинты и блочный IO баз",
+      "title": "Checkpoint & Block I/O Time",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 77
+        "w": 12,
+        "x": 12,
+        "y": 85
       },
       "fieldConfig": {
         "defaults": {
@@ -1249,12 +1351,13 @@
           "legendFormat": "db blk {{op}}",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: checkpoint write/sync busy share and per-DB block IO time (can exceed 1). Fix: spread checkpoints; detailed attribution — I/O Time by Backend."
     },
     {
       "id": 303,
       "type": "timeseries",
-      "title": "Сессии по состояниям (pg_stat_activity)",
+      "title": "Sessions by State",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1263,7 +1366,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 84
+        "y": 92
       },
       "fieldConfig": {
         "defaults": {
@@ -1282,12 +1385,13 @@
           "legendFormat": "{{state}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: idle growth — an app without a pooler; idle in transaction growth — a source of locks and bloat. OK: idle in tx ≈ 0. Fix: pooler; idle_in_transaction_session_timeout."
     },
     {
       "id": 306,
       "type": "timeseries",
-      "title": "Блокировки: удержанные и ОЖИДАЮЩИЕ, по режимам (pg_locks)",
+      "title": "Locks",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1296,7 +1400,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 84
+        "y": 92
       },
       "fieldConfig": {
         "defaults": {
@@ -1316,12 +1420,12 @@
           "refId": "B"
         }
       ],
-      "description": "granted=false — очередь за блокировками: любой устойчивый ненулевой уровень = контенция. Кто кого держит — таблица «Кто кого блокирует» в слое 5."
+      "description": "Watch: the waiting series (granted=false) — the lock queue. OK: steadily 0 waiting. Fix: who holds whom — Blocking Sessions (Workload)."
     },
     {
       "id": 304,
       "type": "timeseries",
-      "title": "Транзакции/с: commit / rollback",
+      "title": "Transactions",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1330,7 +1434,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 84
+        "y": 92
       },
       "fieldConfig": {
         "defaults": {
@@ -1349,12 +1453,13 @@
           "legendFormat": "rollback {{datname}}",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: a commit dip while waits grow = queued; rollback growth = errors/deadlocks/retries. Fix: DB Load (AAS) → by wait class."
     },
     {
       "id": 309,
       "type": "timeseries",
-      "title": "Deadlocks/мин и temp-файлы (байт/с; файлов/мин)",
+      "title": "Deadlocks & Temp Files",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1363,7 +1468,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 91
+        "y": 99
       },
       "fieldConfig": {
         "defaults": {
@@ -1420,12 +1525,13 @@
           "legendFormat": "temp файлов/мин",
           "refId": "C"
         }
-      ]
+      ],
+      "description": "Watch: deadlocks/min > 0; temp bytes/s. Fix: deadlock — lock acquisition order in the app; temp — work_mem / the plan (Top Queries by Temp)."
     },
     {
       "id": 310,
       "type": "timeseries",
-      "title": "Архиватор WAL: успех / ошибки",
+      "title": "WAL Archiver",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1434,7 +1540,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 91
+        "y": 99
       },
       "fieldConfig": {
         "defaults": {
@@ -1480,12 +1586,13 @@
           "legendFormat": "последний успех, сек назад (-1 = никогда)",
           "refId": "D"
         }
-      ]
+      ],
+      "description": "Watch: the .ready queue and last-success age — failed==0 with a STUCK archiver is false calm. OK: queue ≈ 0. Fix: archive_command/storage; a growing queue will fill the disk."
     },
     {
       "id": 320,
       "type": "timeseries",
-      "title": "SLRU-кэши: активность, /с (SubtransSLRU/MultiXact — скрытые убийцы)",
+      "title": "SLRU Caches",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1494,7 +1601,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 91
+        "y": 99
       },
       "fieldConfig": {
         "defaults": {
@@ -1513,12 +1620,13 @@
           "legendFormat": "{{name}} written",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: read/written spikes on SubtransSLRU/MultiXact — sudden degradation, visible in AAS only as an anonymous LWLock. Fix: long transactions with savepoints, SELECT FOR SHARE; PG17 — SLRU size GUCs."
     },
     {
       "id": 311,
       "type": "timeseries",
-      "title": "Гигиена: долгие транзакции / 2PC / pending_restart",
+      "title": "Long Transactions & 2PC",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1527,7 +1635,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 98
+        "y": 106
       },
       "fieldConfig": {
         "defaults": {
@@ -1573,12 +1681,13 @@
           "legendFormat": "старейший prepared, сек",
           "refId": "D"
         }
-      ]
+      ],
+      "description": "Watch: transactions holding vacuum and xmin; forgotten prepared xacts. OK: prepared ≈ 0. Fix: kill/fix the client; COMMIT/ROLLBACK PREPARED; apply pending restarts in a window."
     },
     {
       "id": 318,
       "type": "timeseries",
-      "title": "Ошибки: fatal/killed сессии, checksum failures",
+      "title": "Session Errors & Checksums",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1587,7 +1696,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 98
+        "y": 106
       },
       "fieldConfig": {
         "defaults": {
@@ -1606,24 +1715,82 @@
           "legendFormat": "checksum failures/мин",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: fatal/killed spikes; checksum > 0 = page corruption. OK: checksum strictly 0. Fix: checksum — disk/memory, restore from backup/replica; killed — find who kills (OOM? admin?)."
+    },
+    {
+      "id": 631,
+      "type": "table",
+      "title": "Instance Settings",
+      "datasource": {
+        "type": "postgres",
+        "uid": "pg-${db}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 113
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "name"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pending"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT name,\n       current_setting(name) AS value,\n       CASE WHEN pending_restart THEN 'ЖДЁТ РЕСТАРТА' ELSE '' END AS pending,\n       CASE WHEN source = 'configuration file' AND sourcefile LIKE '%postgresql.auto.conf'\n            THEN 'ALTER SYSTEM' ELSE source END AS source\nFROM pg_settings\nWHERE name = ANY(ARRAY['max_connections','max_files_per_process','shared_buffers','effective_cache_size','work_mem','maintenance_work_mem','huge_pages','huge_page_size','shared_memory_size_in_huge_pages','max_wal_size','min_wal_size','checkpoint_timeout','checkpoint_completion_target','wal_buffers','wal_compression','synchronous_commit','synchronous_standby_names','autovacuum_max_workers','autovacuum_naptime','autovacuum_vacuum_cost_limit','bgwriter_lru_maxpages','track_io_timing','track_wal_io_timing','shared_preload_libraries'])\nORDER BY array_position(ARRAY['max_connections','max_files_per_process','shared_buffers','effective_cache_size','work_mem','maintenance_work_mem','huge_pages','huge_page_size','shared_memory_size_in_huge_pages','max_wal_size','min_wal_size','checkpoint_timeout','checkpoint_completion_target','wal_buffers','wal_compression','synchronous_commit','synchronous_standby_names','autovacuum_max_workers','autovacuum_naptime','autovacuum_vacuum_cost_limit','bgwriter_lru_maxpages','track_io_timing','track_wal_io_timing','shared_preload_libraries'], name)",
+          "datasource": {
+            "type": "postgres",
+            "uid": "pg-${db}"
+          }
+        }
+      ],
+      "description": "Watch: the pending-restart flag; source = ALTER SYSTEM vs configuration file; on standby — ITS OWN values. Live SQL, the datasource follows the instance selector (uid pg-${db}; on «datasource not found» revert to $pgds). Fix: restart in a window; cross-check hugepages with Hardware & Kernel Settings (OS)."
     },
     {
       "id": 400,
       "type": "row",
-      "title": "4. Базы и объекты",
+      "title": "Databases & Objects",
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 105
+        "y": 121
       },
       "collapsed": false
     },
     {
       "id": 402,
       "type": "timeseries",
-      "title": "XID / MXID age (wraparound)",
+      "title": "Transaction ID Age",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1632,7 +1799,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 106
+        "y": 122
       },
       "fieldConfig": {
         "defaults": {
@@ -1651,12 +1818,13 @@
           "legendFormat": "max mxid age",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: growth without a plateau = autovacuum can't freeze fast enough; the only metric able to stop the database entirely. OK: well below 200M. Fix: Xmin Horizon (who holds it), workers/cost limit."
     },
     {
       "id": 409,
       "type": "stat",
-      "title": "Таблиц ждут вакуума",
+      "title": "Tables Needing Vacuum",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1665,7 +1833,7 @@
         "h": 7,
         "w": 4,
         "x": 8,
-        "y": 106
+        "y": 122
       },
       "fieldConfig": {
         "defaults": {
@@ -1695,12 +1863,13 @@
           "expr": "pg_tables_need_vacuum{job=~\"$db\"}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "OK: 0 to a few. Fix: workers/naptime/cost; growing while vacuum runs — xmin is held (Workload)."
     },
     {
       "id": 410,
       "type": "stat",
-      "title": "Неиспользуемых индексов",
+      "title": "Unused Indexes",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1709,7 +1878,7 @@
         "h": 7,
         "w": 4,
         "x": 12,
-        "y": 106
+        "y": 122
       },
       "fieldConfig": {
         "defaults": {
@@ -1735,12 +1904,13 @@
           "expr": "pg_unused_indexes{job=~\"$db\",kind=\"count\"}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: dead weight — a price paid on every UPDATE. Fix: DROP INDEX CONCURRENTLY after checking usage on replicas."
     },
     {
       "id": 404,
       "type": "stat",
-      "title": "Invalid indexes",
+      "title": "Invalid Indexes",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1749,7 +1919,7 @@
         "h": 7,
         "w": 4,
         "x": 16,
-        "y": 106
+        "y": 122
       },
       "fieldConfig": {
         "defaults": {
@@ -1775,12 +1945,13 @@
           "expr": "pg_invalid_indexes{job=~\"$db\"}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "OK: 0 (leftovers of a failed CREATE INDEX CONCURRENTLY). Fix: REINDEX CONCURRENTLY or DROP+CREATE."
     },
     {
       "id": 411,
       "type": "stat",
-      "title": "Худшая sequence, % исчерпания",
+      "title": "Sequence Exhaustion",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1789,7 +1960,7 @@
         "h": 7,
         "w": 4,
         "x": 20,
-        "y": 106
+        "y": 122
       },
       "fieldConfig": {
         "defaults": {
@@ -1826,12 +1997,12 @@
       "options": {
         "textMode": "value_and_name"
       },
-      "description": "Имя показывает, ЧТО чинить (bigint-миграция/setval). Метрика — top-5 sequences, стат показывает худшую."
+      "description": "OK: < 60%. Fix: migrate to bigint / setval; the label shows which sequence."
     },
     {
       "id": 401,
       "type": "timeseries",
-      "title": "Размер баз",
+      "title": "Database Size",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1840,7 +2011,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 113
+        "y": 129
       },
       "fieldConfig": {
         "defaults": {
@@ -1854,12 +2025,13 @@
           "legendFormat": "{{datname}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: trend breaks. Fix: the 'running out of space' route: WAL → temp → bloat."
     },
     {
       "id": 405,
       "type": "timeseries",
-      "title": "Таблицы: размер (top-20), с разбивкой индексов",
+      "title": "Table Size (top 20)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1868,7 +2040,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 113
+        "y": 129
       },
       "fieldConfig": {
         "defaults": {
@@ -1887,12 +2059,13 @@
           "legendFormat": "все индексы",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: a sharp break = bloat after mass UPDATE/DELETE. Fix: pg_repack."
     },
     {
       "id": 403,
       "type": "timeseries",
-      "title": "Dead tuples по таблицам",
+      "title": "Dead Tuples",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1901,7 +2074,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 113
+        "y": 129
       },
       "fieldConfig": {
         "defaults": {
@@ -1915,12 +2088,13 @@
           "legendFormat": "{{schemaname}}.{{relname}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: growth while autovacuum runs = something holds it back. Fix: Xmin Horizon, workers."
     },
     {
       "id": 406,
       "type": "timeseries",
-      "title": "Seq scan vs Index scan, /с — кандидаты на индекс",
+      "title": "Seq vs Index Scans",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1929,7 +2103,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 121
+        "y": 137
       },
       "fieldConfig": {
         "defaults": {
@@ -1948,12 +2122,13 @@
           "legendFormat": "idx {{schemaname}}.{{relname}}",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: seq scans on large tables — index candidates. Fix: add an index; cross-check Top Queries by Buffer Misses."
     },
     {
       "id": 407,
       "type": "timeseries",
-      "title": "HOT update ratio, % — ниже 100 = обновления трогают индексы",
+      "title": "HOT Update Ratio",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1962,7 +2137,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 121
+        "y": 137
       },
       "fieldConfig": {
         "defaults": {
@@ -1977,12 +2152,13 @@
           "legendFormat": "{{schemaname}}.{{relname}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: < 100% on UPDATE-heavy tables = updates touch indexes. Fix: fillfactor < 100, don't index updated columns."
     },
     {
       "id": 408,
       "type": "timeseries",
-      "title": "Давность (auto)vacuum / ANALYZE по таблицам",
+      "title": "Last Vacuum / Analyze",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1991,7 +2167,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 121
+        "y": 137
       },
       "fieldConfig": {
         "defaults": {
@@ -2011,12 +2187,12 @@
           "refId": "B"
         }
       ],
-      "description": "-1 = никогда. Старый ANALYZE = устаревшая статистика планнера = плохие планы; сверить с детектором plan flip (слой 5)."
+      "description": "Watch: -1 = never; a stale ANALYZE = stale planner stats = bad plans. Fix: ANALYZE, per-table autovacuum settings; cross-check Plan Flip Detector."
     },
     {
       "id": 412,
       "type": "timeseries",
-      "title": "Vacuum progress, % (pg_stat_progress_vacuum)",
+      "title": "Vacuum Progress",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2025,7 +2201,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 128
+        "y": 144
       },
       "fieldConfig": {
         "defaults": {
@@ -2040,12 +2216,13 @@
           "legendFormat": "{{schemaname}}.{{relname}}: {{phase}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: a phase stuck for hours = a huge table or a throttled cost limit. Fix: raise vacuum_cost_limit / lower cost_delay; partitioning."
     },
     {
       "id": 413,
       "type": "timeseries",
-      "title": "Bloat таблиц (оценка раз в час): потерянные байты, top-10",
+      "title": "Table Bloat",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2054,7 +2231,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 128
+        "y": 144
       },
       "fieldConfig": {
         "defaults": {
@@ -2069,12 +2246,12 @@
           "refId": "A"
         }
       ],
-      "description": "Dead tuples != bloat: вакуум обнуляет счётчик, место не возвращает. Лечится только pg_repack/VACUUM FULL."
+      "description": "Hourly estimate; dead tuples != bloat — vacuum frees no space back. Fix: pg_repack/VACUUM FULL; verify with pgstattuple before acting."
     },
     {
       "id": 414,
       "type": "timeseries",
-      "title": "Bloat индексов (оценка раз в час): REINDEX-кандидаты, top-10",
+      "title": "Index Bloat",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2083,7 +2260,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 128
+        "y": 144
       },
       "fieldConfig": {
         "defaults": {
@@ -2097,24 +2274,25 @@
           "legendFormat": "{{schemaname}}.{{indexrelname}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Hourly estimate; vacuum does not shrink indexes. Fix: REINDEX CONCURRENTLY."
     },
     {
       "id": 500,
       "type": "row",
-      "title": "5. Workload",
+      "title": "Workload",
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 135
+        "y": 151
       },
       "collapsed": false
     },
     {
       "id": 501,
       "type": "timeseries",
-      "title": "Запросов/с (pg_stat_statements)",
+      "title": "Queries per Second",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2123,7 +2301,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 136
+        "y": 152
       },
       "fieldConfig": {
         "defaults": {
@@ -2137,12 +2315,13 @@
           "legendFormat": "qps",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: a break vs baseline. Fix: growth with latency → tops; concentration — Top Queries by Calls."
     },
     {
       "id": 502,
       "type": "timeseries",
-      "title": "Средняя латентность запроса, мс",
+      "title": "Query Latency (avg)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2151,7 +2330,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 136
+        "y": 152
       },
       "fieldConfig": {
         "defaults": {
@@ -2165,12 +2344,13 @@
           "legendFormat": "avg latency",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: the trend; the average hides tails — see Latency Spread. Fix: DB Load (AAS) → class → tops."
     },
     {
       "id": 503,
       "type": "timeseries",
-      "title": "Старейшая транзакция / долгий запрос / idle-in-xact, сек",
+      "title": "Oldest Transaction / Query",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2179,7 +2359,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 136
+        "y": 152
       },
       "fieldConfig": {
         "defaults": {
@@ -2203,12 +2383,13 @@
           "legendFormat": "longest idle in xact",
           "refId": "C"
         }
-      ]
+      ],
+      "description": "Watch: the oldest transaction holds vacuum; idle-in-tx holds locks. OK: seconds. Fix: idle_in_transaction_session_timeout, statement_timeout, fix the client."
     },
     {
       "id": 515,
       "type": "timeseries",
-      "title": "DB Load по классам ожиданий, AAS (pg_wait_sampling, 10 мс сэмплы)",
+      "title": "DB Load (AAS)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2217,7 +2398,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 143
+        "y": 159
       },
       "fieldConfig": {
         "defaults": {
@@ -2240,12 +2421,13 @@
             "uid": "prometheus"
           }
         }
-      ]
+      ],
+      "description": "Watch: total height vs cores and the dominating class; a Lock-class plateau of height N = N sessions queued. OK: AAS < cores. Fix: Lock → Blocking Sessions; IO → Disk Reads/Writes by Backend + tops; CPU → Top Queries by CPU."
     },
     {
       "id": 516,
       "type": "timeseries",
-      "title": "Top запросов по ожиданиям, AAS (queryid → текст в таблице выше)",
+      "title": "Top Queries by Wait Time",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2254,7 +2436,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 152
+        "y": 168
       },
       "fieldConfig": {
         "defaults": {
@@ -2272,12 +2454,13 @@
             "uid": "prometheus"
           }
         }
-      ]
+      ],
+      "description": "Ranks by total active time (CPU + waits), sees queries in flight. Fix: queryid → Query Text Lookup below."
     },
     {
       "id": 519,
       "type": "timeseries",
-      "title": "Top wait events (класс:событие), AAS — диагноз, а не симптом",
+      "title": "Top Wait Events",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2286,7 +2469,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 152
+        "y": 168
       },
       "fieldConfig": {
         "defaults": {
@@ -2301,12 +2484,12 @@
           "refId": "A"
         }
       ],
-      "description": "IO:DataFileRead vs IO:WALSync vs LWLock:WALWrite vs Lock:transactionid — разные болезни одного класса."
+      "description": "Watch: the specific event — DataFileRead vs WALSync vs Lock:transactionid are different diseases of one class. Fix: per event."
     },
     {
       "id": 505,
       "type": "timeseries",
-      "title": "Top-10 запросов по времени выполнения (доля времени БД)",
+      "title": "Top Queries by Time",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2315,7 +2498,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 160
+        "y": 176
       },
       "fieldConfig": {
         "defaults": {
@@ -2329,12 +2512,13 @@
           "legendFormat": "{{datname}} qid={{queryid}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Share of DB time (can exceed 1 — parallelism). Fix: the culprit's plan — auto_explain (grep qid=)."
     },
     {
       "id": 506,
       "type": "timeseries",
-      "title": "Top-10 запросов по частоте вызовов",
+      "title": "Top Queries by Calls",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2343,7 +2527,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 160
+        "y": 176
       },
       "fieldConfig": {
         "defaults": {
@@ -2357,21 +2541,22 @@
           "legendFormat": "{{datname}} qid={{queryid}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: traffic concentration in a handful of queries. Fix: client-side caching/batching."
     },
     {
       "id": 517,
       "type": "timeseries",
-      "title": "Разброс СРЕДНИХ латентностей между запросами (p50-p99), мс",
+      "title": "Latency Spread (p50–p99)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
+        "w": 12,
         "x": 0,
-        "y": 168
+        "y": 184
       },
       "fieldConfig": {
         "defaults": {
@@ -2412,70 +2597,21 @@
           "refId": "P99"
         }
       ],
-      "description": "Распределение СРЕДНИХ латентностей поперёк всех активных запросов (не перцентили отдельных выполнений — их pg_stat_statements не хранит, нужен pg_stat_monitor). p99 >> p50 = несколько тяжёлых запросов на фоне быстрой массы. Неактивные за окно [5m] запросы исключены."
-    },
-    {
-      "id": 518,
-      "type": "timeseries",
-      "title": "Разброс частот вызовов между запросами (p50-p99), ops/с",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 168
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "quantile(0.50, rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0)",
-          "legendFormat": "p50",
-          "refId": "P50"
-        },
-        {
-          "expr": "quantile(0.75, rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0)",
-          "legendFormat": "p75",
-          "refId": "P75"
-        },
-        {
-          "expr": "quantile(0.90, rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0)",
-          "legendFormat": "p90",
-          "refId": "P90"
-        },
-        {
-          "expr": "quantile(0.95, rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0)",
-          "legendFormat": "p95",
-          "refId": "P95"
-        },
-        {
-          "expr": "quantile(0.99, rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0)",
-          "legendFormat": "p99",
-          "refId": "P99"
-        }
-      ],
-      "description": "Распределение частот вызовов поперёк всех активных запросов. Разрыв p99/p50 = трафик сконцентрирован в горстке горячих запросов. Неактивные за окно [5m] запросы исключены."
+      "description": "Percentiles of per-query AVERAGES (not executions — pgss doesn't keep those). Watch: the p99/p50 gap = a few heavy queries against a fast mass. Fix: Top Queries by Time."
     },
     {
       "id": 504,
       "type": "timeseries",
-      "title": "Autovacuum-воркеры vs потолок (очередь за локами — в стеке слева)",
+      "title": "Autovacuum Workers",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 168
+        "w": 12,
+        "x": 12,
+        "y": 184
       },
       "fieldConfig": {
         "defaults": {
@@ -2494,21 +2630,22 @@
           "legendFormat": "autovacuum_max_workers (потолок)",
           "refId": "C"
         }
-      ]
+      ],
+      "description": "Watch: a plateau at the ceiling = saturation. Fix: raise autovacuum_max_workers/cost_limit."
     },
     {
       "id": 508,
       "type": "timeseries",
-      "title": "xmin-горизонт: насколько сдержан vacuum (в транзакциях)",
+      "title": "Xmin Horizon",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
+        "w": 12,
         "x": 0,
-        "y": 175
+        "y": 191
       },
       "fieldConfig": {
         "defaults": {
@@ -2522,59 +2659,22 @@
           "legendFormat": "xmin horizon age",
           "refId": "A"
         }
-      ]
-    },
-    {
-      "id": 513,
-      "type": "timeseries",
-      "title": "Поток данных workload: чтения мимо shared_buffers / temp / WAL, байт/с",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 175
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "rate(pg_statements_resources_total{job=~\"$db\",kind=\"shared_blks_read\"}[1m]) * 8192",
-          "legendFormat": "мимо shared_buffers",
-          "refId": "A"
-        },
-        {
-          "expr": "rate(pg_statements_resources_total{job=~\"$db\",kind=\"temp_blks_written\"}[1m]) * 8192",
-          "legendFormat": "temp written",
-          "refId": "B"
-        },
-        {
-          "expr": "rate(pg_statements_resources_total{job=~\"$db\",kind=\"wal_bytes\"}[1m])",
-          "legendFormat": "WAL",
-          "refId": "C"
-        }
-      ]
+      ],
+      "description": "Watch: growth = vacuum is held back, dead rows pile up. Fix: find the holder — Long Transactions, slots, prepared."
     },
     {
       "id": 512,
       "type": "timeseries",
-      "title": "Top: кто тащит строки (rows/с)",
+      "title": "Top Queries by Rows",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 175
+        "w": 12,
+        "x": 12,
+        "y": 191
       },
       "fieldConfig": {
         "defaults": {
@@ -2588,12 +2688,13 @@
           "legendFormat": "qid={{queryid}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: rows/s as a proxy for over-fetch and network traffic; weight = rows per call. Fix: LIMIT/pagination, drop unneeded columns/rows client-side."
     },
     {
       "id": 509,
       "type": "timeseries",
-      "title": "Top: чтения мимо shared_buffers (может быть OS cache, НЕ обязательно диск; физику см. kcache), байт/с",
+      "title": "Top Queries by Buffer Misses",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2602,7 +2703,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 182
+        "y": 198
       },
       "fieldConfig": {
         "defaults": {
@@ -2616,12 +2717,13 @@
           "legendFormat": "qid={{queryid}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Reads past shared_buffers — possibly OS cache, NOT necessarily disk (physics — Top Queries by Disk Reads). Fix: indexes/RAM."
     },
     {
       "id": 510,
       "type": "timeseries",
-      "title": "Top: кто спиллит на диск (temp_blks_written, байт/с)",
+      "title": "Top Queries by Temp",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2630,7 +2732,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 182
+        "y": 198
       },
       "fieldConfig": {
         "defaults": {
@@ -2644,12 +2746,13 @@
           "legendFormat": "qid={{queryid}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Who spills to disk. Fix: work_mem (careful: × connections), fix the plan (sorts/hashes)."
     },
     {
       "id": 511,
       "type": "timeseries",
-      "title": "Top: кто генерирует WAL (байт/с)",
+      "title": "Top Queries by WAL",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2658,7 +2761,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 182
+        "y": 198
       },
       "fieldConfig": {
         "defaults": {
@@ -2672,12 +2775,13 @@
           "legendFormat": "qid={{queryid}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Who generates WAL — the culprit of checkpoint storms and replication lag. Fix: batch UPDATEs, drop redundant indexes (each one = WAL)."
     },
     {
       "id": 520,
       "type": "timeseries",
-      "title": "Top: CPU по запросам (pg_stat_kcache), ядер",
+      "title": "Top Queries by CPU",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2686,7 +2790,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 189
+        "y": 205
       },
       "fieldConfig": {
         "defaults": {
@@ -2702,15 +2806,16 @@
         },
         {
           "expr": "sum(rate(pg_kcache_cpu_seconds_total{job=~\"$db\"}[5m]))",
-          "legendFormat": "вся БД (сверить с CPU хоста, слой 2)",
+          "legendFormat": "вся БД (сверить с CPU хоста, слой 1)",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Real CPU (pg_stat_kcache); the whole-DB line — compare with host CPU Usage: whose CPU is it. Fix: the culprit's plan/JIT/functions."
     },
     {
       "id": 522,
       "type": "timeseries",
-      "title": "Top: реальный физический IO по запросам (pg_stat_kcache), байт/с",
+      "title": "Top Queries by Disk Reads",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2719,7 +2824,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 189
+        "y": 205
       },
       "fieldConfig": {
         "defaults": {
@@ -2734,12 +2839,12 @@
           "refId": "A"
         }
       ],
-      "description": "В отличие от shared_blks_read это настоящие обращения к диску (getrusage), OS cache не считается."
+      "description": "True physical disk (getrusage), OS cache not counted — unlike Top Queries by Buffer Misses. Fix: indexes, RAM, a faster volume."
     },
     {
       "id": 521,
       "type": "timeseries",
-      "title": "Нестабильность латентности: stddev/mean по top-запросам (детектор plan flip)",
+      "title": "Plan Flip Detector",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2748,7 +2853,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 189
+        "y": 205
       },
       "fieldConfig": {
         "defaults": {
@@ -2763,12 +2868,12 @@
           "refId": "A"
         }
       ],
-      "description": "Рост отношения при неизменном rate = бимодальная латентность = вероятно, сменился план. План — в логе auto_explain."
+      "description": "Watch: stddev/mean growth at an unchanged rate = bimodal latency = the plan likely flipped. Fix: the plan in the auto_explain log (qid=), ANALYZE tables, pin the plan."
     },
     {
       "id": 514,
       "type": "table",
-      "title": "Расшифровка queryid → текст запроса (top по времени/WAL/temp)",
+      "title": "Query Text Lookup",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2777,7 +2882,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 196
+        "y": 212
       },
       "fieldConfig": {
         "defaults": {},
@@ -2827,21 +2932,22 @@
             }
           }
         }
-      ]
+      ],
+      "description": "Texts for top-10 by time/WAL/temp. For queryids from other tops — SQL straight into pgss (SELECT query FROM pg_stat_statements WHERE queryid = ...)."
     },
     {
       "id": 623,
       "type": "table",
-      "title": "Кто кого блокирует: waiter → blocker (pg_blocking_pids, живой SQL из $pgds)",
+      "title": "Blocking Sessions",
       "datasource": {
         "type": "postgres",
-        "uid": "${pgds}"
+        "uid": "pg-${db}"
       },
       "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 204
+        "y": 220
       },
       "fieldConfig": {
         "defaults": {},
@@ -2855,28 +2961,28 @@
           "rawSql": "SELECT\n  w.pid                                                   AS waiter_pid,\n  bp.pid                                                  AS blocker_pid,\n  w.usename                                               AS waiter_user,\n  b.usename                                               AS blocker_user,\n  b.state                                                 AS blocker_state,\n  ROUND(EXTRACT(EPOCH FROM (now() - w.state_change)))::int AS wait_s,\n  COALESCE(w.query_id::text, '')                          AS waiter_queryid,\n  LEFT(regexp_replace(w.query, '\\s+', ' ', 'g'), 70)      AS waiter_query,\n  LEFT(regexp_replace(b.query, '\\s+', ' ', 'g'), 70)      AS blocker_last_query\nFROM pg_stat_activity w\nCROSS JOIN LATERAL unnest(pg_blocking_pids(w.pid)) AS bp(pid)\nJOIN pg_stat_activity b ON b.pid = bp.pid\nWHERE w.wait_event_type = 'Lock'\nORDER BY wait_s DESC\nLIMIT 20",
           "datasource": {
             "type": "postgres",
-            "uid": "${pgds}"
+            "uid": "pg-${db}"
           }
         }
       ],
-      "description": "Пустая таблица = очереди за локами нет. blocker_state = 'idle in transaction' — классический корень инцидента. waiter_queryid связывает с pgss/AAS-панелями. Запрос идёт напрямую в PG (переключатель $pgds: primary/standby) под ролью monitoring (statement_timeout 5s, lock_timeout 1s)."
+      "description": "Empty = no lock queue. blocker_state = idle in transaction — the classic root cause. Live SQL as role monitoring (timeouts 5s/1s); the datasource follows the instance selector (uid pg-${db}; on «datasource not found» revert to $pgds). Fix: terminate the blocker, fix the client."
     },
     {
       "id": 600,
       "type": "row",
-      "title": "6. Репликация (sync standby)",
+      "title": "Replication",
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 212
+        "y": 228
       },
       "collapsed": false
     },
     {
       "id": 601,
       "type": "timeseries",
-      "title": "Лаг репликации, сек (primary: pg_stat_replication)",
+      "title": "Replication Lag (seconds)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2885,7 +2991,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 213
+        "y": 229
       },
       "fieldConfig": {
         "defaults": {
@@ -2899,12 +3005,13 @@
           "legendFormat": "{{application_name}} {{stage}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: which stage lags. OK: for sync — milliseconds. Fix: write/flush — standby disk; replay — conflicts / single-threaded replay."
     },
     {
       "id": 602,
       "type": "timeseries",
-      "title": "Лаг репликации, байт (sent / replay)",
+      "title": "Replication Lag (bytes)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2913,7 +3020,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 213
+        "y": 229
       },
       "fieldConfig": {
         "defaults": {
@@ -2927,12 +3034,13 @@
           "legendFormat": "{{application_name}} {{stage}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: sent lag = network/walsender can't ship. Fix: network, standby disk."
     },
     {
       "id": 603,
       "type": "stat",
-      "title": "Синхронных реплик",
+      "title": "Sync Standbys",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2941,7 +3049,7 @@
         "h": 7,
         "w": 4,
         "x": 16,
-        "y": 213
+        "y": 229
       },
       "fieldConfig": {
         "defaults": {
@@ -2967,12 +3075,13 @@
           "expr": "pg_sync_standbys{job=\"primary\",host=~\"$host\"} or on() vector(0)",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "OK: equals the count in synchronous_standby_names. Fix: 0 = COMMITS ARE STUCK — restore standby/network now or drop sync temporarily."
     },
     {
       "id": 604,
       "type": "stat",
-      "title": "walreceiver жив (standby)",
+      "title": "WAL Receiver",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2981,7 +3090,7 @@
         "h": 7,
         "w": 4,
         "x": 20,
-        "y": 213
+        "y": 229
       },
       "fieldConfig": {
         "defaults": {
@@ -3007,12 +3116,13 @@
           "expr": "pg_standby_wal_receiver_up{host=~\"$host\"} or on() vector(0)",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "OK: 1. Fix: 0 = the stream is broken (network/slot/timeline) — replay lag may falsely read zero meanwhile."
     },
     {
       "id": 605,
       "type": "timeseries",
-      "title": "Слоты: удержание WAL",
+      "title": "Replication Slots",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3021,7 +3131,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 220
+        "y": 236
       },
       "fieldConfig": {
         "defaults": {
@@ -3045,12 +3155,13 @@
           "legendFormat": "{{slot_name}}: {{wal_status}} (ПРОБЛЕМА)",
           "refId": "C"
         }
-      ]
+      ],
+      "description": "Watch: retained WAL growing = the slot consumer is dead; safe_wal_size shrinking = headroom to slot loss. Fix: revive the consumer or DROP the slot before primary's disk fills."
     },
     {
       "id": 606,
       "type": "timeseries",
-      "title": "Standby: replay gap (байт) и задержка replay (сек)",
+      "title": "Standby Replay",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3059,7 +3170,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 220
+        "y": 236
       },
       "fieldConfig": {
         "defaults": {
@@ -3095,12 +3206,13 @@
           "legendFormat": "replay delay, сек",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: gap bytes (received, not replayed) growing = replay is the bottleneck (single process/conflicts/disk); delay seconds while primary is idle is normal. Fix: conflicts (Recovery Conflicts), standby disk."
     },
     {
       "id": 607,
       "type": "timeseries",
-      "title": "Конфликты recovery на standby, /мин",
+      "title": "Recovery Conflicts",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3109,7 +3221,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 220
+        "y": 236
       },
       "fieldConfig": {
         "defaults": {
@@ -3123,24 +3235,25 @@
           "legendFormat": "{{kind}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: mostly snapshot/lock — standby queries cancelled by replay. Fix: hot_standby_feedback (price — bloat on primary) or max_standby_streaming_delay."
     },
     {
       "id": 700,
       "type": "row",
-      "title": "7. Здоровье мониторинга",
+      "title": "Monitoring Health",
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 227
+        "y": 243
       },
       "collapsed": false
     },
     {
       "id": 701,
       "type": "timeseries",
-      "title": "Scrape-таргеты: up",
+      "title": "Scrape Targets",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3149,7 +3262,7 @@
         "h": 7,
         "w": 4,
         "x": 0,
-        "y": 228
+        "y": 244
       },
       "fieldConfig": {
         "defaults": {
@@ -3168,12 +3281,13 @@
           "legendFormat": "prometheus",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "OK: all = 1. Fix: whichever job is down — that monitoring layer is blind; absent() alerts must catch this."
     },
     {
       "id": 702,
       "type": "timeseries",
-      "title": "Длительность scrape, сек (timeout 10s)",
+      "title": "Scrape Duration",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3182,7 +3296,7 @@
         "h": 7,
         "w": 5,
         "x": 4,
-        "y": 228
+        "y": 244
       },
       "fieldConfig": {
         "defaults": {
@@ -3196,12 +3310,13 @@
           "legendFormat": "{{job}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "OK: well below the 10s timeout. Fix: close to 10s — a heavy collector; see rollback triggers in rollback_cumulative_stats.txt."
     },
     {
       "id": 703,
       "type": "timeseries",
-      "title": "Сэмплы scrape vs sample_limit (превышение = потеря ВСЕГО scrape)",
+      "title": "Scrape Samples vs Limit",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3210,7 +3325,7 @@
         "h": 7,
         "w": 5,
         "x": 9,
-        "y": 228
+        "y": 244
       },
       "fieldConfig": {
         "defaults": {
@@ -3229,12 +3344,13 @@
           "legendFormat": "sample_limit (prometheus.yml)",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: approaching sample_limit — exceeding it drops the WHOLE scrape. Fix: cardinality (top-N, labels) or raise the limit in prometheus.yml (the 8000 line is hardcoded)."
     },
     {
       "id": 704,
       "type": "timeseries",
-      "title": "pgss: вытеснения, dealloc/час (растёт → top-N недосчитывает)",
+      "title": "pgss Evictions",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3243,7 +3359,7 @@
         "h": 7,
         "w": 5,
         "x": 14,
-        "y": 228
+        "y": 244
       },
       "fieldConfig": {
         "defaults": {
@@ -3257,12 +3373,13 @@
           "legendFormat": "{{job}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: dealloc growth = top-N silently undercounts. Fix: raise pg_stat_statements.max or reset more often."
     },
     {
       "id": 705,
       "type": "timeseries",
-      "title": "Prometheus: активные серии TSDB (рост = взрыв кардинальности)",
+      "title": "TSDB Head Series",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3271,7 +3388,7 @@
         "h": 7,
         "w": 5,
         "x": 19,
-        "y": 228
+        "y": 244
       },
       "fieldConfig": {
         "defaults": {
@@ -3285,7 +3402,8 @@
           "legendFormat": "head series",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: growth steps = cardinality explosion. Fix: find the culprit via count by (__name__), sample_limit guards."
     }
   ],
   "templating": {
@@ -3331,19 +3449,6 @@
         "current": {
           "text": "demo-host",
           "value": "demo-host"
-        }
-      },
-      {
-        "name": "pgds",
-        "label": "PG (SQL)",
-        "type": "datasource",
-        "query": "postgres",
-        "refresh": 1,
-        "includeAll": false,
-        "multi": false,
-        "current": {
-          "text": "PostgreSQL primary",
-          "value": "pg-primary"
         }
       }
     ]

@@ -24,7 +24,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "PostgreSQL жив",
+      "title": "PostgreSQL Up",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -37,7 +37,7 @@
       },
       "links": [
         {
-          "title": "Слой 3: инстанс",
+          "title": "Instance: up",
           "url": "/d/pg-layered?viewPanel=301&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -67,12 +67,12 @@
           "refId": "A"
         }
       ],
-      "description": "При падении БД серия исчезает, а не становится 0 — «or on() vector(0)» даёт красный ноль. Алерт: absent(pg_up{job=\"primary\"})."
+      "description": "When the DB is down the pg_up series DISAPPEARS rather than becoming 0 — «or on() vector(0)» renders a red zero; alert on absent(pg_up). Fix: exporter/network/database — collection health is up{job=~\"sql-.*\"} (Monitoring Health)."
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Синхронных реплик",
+      "title": "Sync Standbys",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -85,7 +85,7 @@
       },
       "links": [
         {
-          "title": "Слой 6: репликация",
+          "title": "Replication: sync standbys",
           "url": "/d/pg-layered?viewPanel=603&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -114,12 +114,13 @@
           "expr": "pg_sync_standbys{job=\"primary\",host=~\"$host\"} or on() vector(0)",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "OK: equals the count in synchronous_standby_names. Fix: 0 = COMMITS ARE STUCK — restore standby/network now or drop sync temporarily."
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "walreceiver жив",
+      "title": "WAL Receiver",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -132,7 +133,7 @@
       },
       "links": [
         {
-          "title": "Слой 6: репликация",
+          "title": "Replication: WAL receiver",
           "url": "/d/pg-layered?viewPanel=604&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -161,12 +162,13 @@
           "expr": "pg_standby_wal_receiver_up{host=~\"$host\"} or on() vector(0)",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "OK: 1. Fix: 0 = the stream is broken (network/slot/timeline) — replay lag may falsely read zero meanwhile."
     },
     {
       "id": 4,
       "type": "stat",
-      "title": "Диск: свободно (худший том)",
+      "title": "Disk Space Free (worst)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -179,7 +181,7 @@
       },
       "links": [
         {
-          "title": "Слой 2: ОС, диск",
+          "title": "OS: disk space",
           "url": "/d/pg-layered?viewPanel=204&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -211,12 +213,13 @@
           "expr": "min(100 * node_filesystem_avail_bytes{host=~\"$host\",fstype!~\"tmpfs|overlay|squashfs\"} / node_filesystem_size_bytes)",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: worst volume trend — WAL/temp can eat space in minutes, not days. OK: > 20–25%. Fix: WAL Directory Size (slot? archiver?) → temp spills (Top Queries by Temp) → bloat (pg_repack)."
     },
     {
       "id": 5,
       "type": "stat",
-      "title": "Коннекты, % от max",
+      "title": "Connections %",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -229,7 +232,7 @@
       },
       "links": [
         {
-          "title": "Слой 3: коннекты",
+          "title": "Instance: connections",
           "url": "/d/pg-layered?viewPanel=302&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -261,12 +264,13 @@
           "expr": "100 * pg_client_backends_count{job=~\"$db\"} / scalar(pg_settings_max_connections{job=~\"$db\"})",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Client backends / max_connections. OK: < 80%. Fix: pooler; who took the slots — Connections by Role."
     },
     {
       "id": 6,
       "type": "stat",
-      "title": "Max XID age",
+      "title": "Max XID Age",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -279,7 +283,7 @@
       },
       "links": [
         {
-          "title": "Слой 4: wraparound",
+          "title": "Databases: XID age",
           "url": "/d/pg-layered?viewPanel=402&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -311,12 +315,13 @@
           "expr": "max(pg_db_xid_age{job=~\"$db\"})",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: growth without a plateau = autovacuum can't freeze fast enough; the only metric able to stop the database entirely. OK: well below 200M. Fix: Xmin Horizon (who holds it), workers/cost limit."
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Транзакции/с",
+      "title": "Transactions",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -329,7 +334,7 @@
       },
       "links": [
         {
-          "title": "Слой 3: TPS",
+          "title": "Instance: transactions",
           "url": "/d/pg-layered?viewPanel=304&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -350,12 +355,13 @@
           "legendFormat": "rollback",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: a commit dip while waits grow = queued; rollback growth = errors/deadlocks/retries. Fix: DB Load (AAS) → by wait class."
     },
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Средняя латентность запроса, мс",
+      "title": "Query Latency (avg)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -368,7 +374,7 @@
       },
       "links": [
         {
-          "title": "Слой 5: workload",
+          "title": "Workload: latency",
           "url": "/d/pg-layered?viewPanel=502&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -384,12 +390,13 @@
           "legendFormat": "avg",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: the trend; the average hides tails — see Latency Spread. Fix: DB Load (AAS) → class → tops."
     },
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Лаг реплики, сек (replay)",
+      "title": "Replication Lag",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -402,7 +409,7 @@
       },
       "links": [
         {
-          "title": "Слой 6: репликация",
+          "title": "Replication: lag",
           "url": "/d/pg-layered?viewPanel=601&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -418,12 +425,13 @@
           "legendFormat": "{{application_name}}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: which stage lags. OK: for sync — milliseconds. Fix: write/flush — standby disk; replay — conflicts / single-threaded replay."
     },
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Локи и долгие транзакции",
+      "title": "Locks & Long Transactions",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -436,7 +444,7 @@
       },
       "links": [
         {
-          "title": "Слой 5: DB Load (класс Lock)",
+          "title": "Workload: DB Load",
           "url": "/d/pg-layered?viewPanel=515&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -457,12 +465,13 @@
           "legendFormat": "транзакции > 5 мин",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: waiting Lock sessions and transactions above the threshold. OK: 0. Fix: Blocking Sessions (Workload)."
     },
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Генерация WAL, байт/с",
+      "title": "WAL Generation",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -475,7 +484,7 @@
       },
       "links": [
         {
-          "title": "Слой 3: WAL",
+          "title": "Instance: WAL",
           "url": "/d/pg-layered?viewPanel=316&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -491,12 +500,13 @@
           "legendFormat": "WAL",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Watch: bytes/s, buffers_full, FPI share right after a checkpoint. Fix: buffers_full growing → raise wal_buffers; high FPI → wal_compression / less frequent checkpoints; culprit — Top Queries by WAL."
     },
     {
       "id": 12,
       "type": "timeseries",
-      "title": "Deadlocks/мин и temp-файлы/мин",
+      "title": "Deadlocks & Temp Files",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -509,7 +519,7 @@
       },
       "links": [
         {
-          "title": "Слой 3: ошибки",
+          "title": "Instance: deadlocks & temp",
           "url": "/d/pg-layered?viewPanel=309&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -530,12 +540,13 @@
           "legendFormat": "temp файлов/мин",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: deadlocks/min > 0; temp bytes/s. Fix: deadlock — lock acquisition order in the app; temp — work_mem / the plan (Top Queries by Temp)."
     },
     {
       "id": 13,
       "type": "stat",
-      "title": "Таблиц ждут вакуума",
+      "title": "Tables Needing Vacuum",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -548,7 +559,7 @@
       },
       "links": [
         {
-          "title": "Слой 4: вакуум",
+          "title": "Databases: vacuum",
           "url": "/d/pg-layered?viewPanel=409&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -580,12 +591,13 @@
           "expr": "pg_tables_need_vacuum{job=~\"$db\"}",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "OK: 0 to a few. Fix: workers/naptime/cost; growing while vacuum runs — xmin is held (Workload)."
     },
     {
       "id": 14,
       "type": "timeseries",
-      "title": "Ошибки: fatal/killed сессии, checksum",
+      "title": "Session Errors & Checksums",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -598,7 +610,7 @@
       },
       "links": [
         {
-          "title": "Слой 3: ошибки",
+          "title": "Instance: errors",
           "url": "/d/pg-layered?viewPanel=318&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -619,12 +631,13 @@
           "legendFormat": "checksum/мин",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: fatal/killed spikes; checksum > 0 = page corruption. OK: checksum strictly 0. Fix: checksum — disk/memory, restore from backup/replica; killed — find who kills (OOM? admin?)."
     },
     {
       "id": 15,
       "type": "timeseries",
-      "title": "Чем занята база: DB Load по классам ожиданий (AAS) vs ядра",
+      "title": "DB Load (AAS) vs Cores",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -637,7 +650,7 @@
       },
       "links": [
         {
-          "title": "Слой 5: workload",
+          "title": "Workload: DB Load",
           "url": "/d/pg-layered?viewPanel=515&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -690,12 +703,12 @@
           "refId": "B"
         }
       ],
-      "description": "AAS у числа ядер = насыщение. Плато класса Lock высотой N = N сессий в очереди за блокировкой."
+      "description": "Watch: total height vs cores and the dominating class; a Lock-class plateau of height N = N sessions queued. OK: AAS < cores. Fix: Lock → Blocking Sessions; IO → Disk Reads/Writes by Backend + tops; CPU → Top Queries by CPU."
     },
     {
       "id": 16,
       "type": "stat",
-      "title": "Диск: латентность, мс (худшее устройство)",
+      "title": "Disk Latency (worst)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -708,7 +721,7 @@
       },
       "links": [
         {
-          "title": "Слой 2: ОС, диск",
+          "title": "OS: disk latency",
           "url": "/d/pg-layered?viewPanel=206&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -746,12 +759,13 @@
           "legendFormat": "write",
           "refId": "B"
         }
-      ]
+      ],
+      "description": "Watch: per device, the WAL volume separately. OK: SSD/NVMe single-digit ms, > 10–20 ms is bad. Fix: growth at unchanged IOPS — disk/neighbor/throttling (infrastructure); growth together with IOPS — your load → Disk Writes/Reads by Backend."
     },
     {
       "id": 17,
       "type": "stat",
-      "title": "Uptime PostgreSQL",
+      "title": "Uptime",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -764,7 +778,7 @@
       },
       "links": [
         {
-          "title": "Слой 3: инстанс",
+          "title": "Instance: uptime",
           "url": "/d/pg-layered?viewPanel=614&var-db=${db}&var-host=${host}&from=${__from}&to=${__to}"
         }
       ],
@@ -795,7 +809,7 @@
           "legendFormat": ""
         }
       ],
-      "description": "Резкое падение = рестарт / crash-recovery / failover. Красное = моложе 10 минут."
+      "description": "Watch: a sharp drop = restart/crash-recovery/failover (red — younger than 10 min). Fix: reason in PG logs; cross-check OOM Kills (OS)."
     }
   ],
   "templating": {

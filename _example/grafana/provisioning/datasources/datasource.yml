@@ -8,9 +8,13 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
 
-  # прямые SQL-датасорсы для «живых» панелей (блокировочная топология в pg-layered):
-  # граф pid -> pid нельзя дёшево положить в метрики — читается из PG при просмотре.
-  # Роль monitoring уже защищена таймаутами (statement_timeout 5s / lock_timeout 1s)
+  # прямые SQL-датасорсы для «живых» панелей pg-layered (блокировочная топология,
+  # таблица ключевых настроек): такое нельзя/незачем класть в метрики — читается
+  # из PG при просмотре. Роль monitoring уже защищена таймаутами
+  # (statement_timeout 5s / lock_timeout 1s).
+  # ВАЖНО: uid обязан быть "pg-<job>" (pg-primary/pg-standby) — панели
+  # «Blocking Sessions» и «Instance Settings» ссылаются на датасорс как
+  # uid: pg-${db}, отдельного переключателя нет
   - name: PostgreSQL primary
     type: postgres
     uid: pg-primary

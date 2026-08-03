@@ -96,6 +96,32 @@ services:
   node-exporter:
     restart: unless-stopped
     image: prom/node-exporter:v1.8.2
+    # sysctl-коллектор (по умолчанию выключен) — параметры ядра для панели
+    # «Hardware & Kernel Settings» слоя OS. vm.* глобальны и видны из
+    # контейнера; net.* читаются из netns КОНТЕЙНЕРА — на проде запускайте
+    # node_exporter в host network (или как systemd-юнит), чтобы видеть хост.
+    # ВНИМАНИЕ: один отсутствующий в ядре sysctl роняет ВЕСЬ коллектор
+    # (node_scrape_collector_success{collector="sysctl"}=0) — включайте только
+    # гарантированно существующие на целевом ядре. NUMA-параметры
+    # (vm.zone_reclaim_mode, kernel.numa_balancing) в linuxkit-ядре Docker
+    # Desktop отсутствуют — раскомментируйте их на NUMA-железе прода
+    command:
+      - --collector.sysctl
+      - --collector.sysctl.include=vm.swappiness
+      - --collector.sysctl.include=vm.overcommit_memory
+      - --collector.sysctl.include=vm.overcommit_ratio
+      - --collector.sysctl.include=vm.dirty_background_bytes
+      - --collector.sysctl.include=vm.dirty_bytes
+      - --collector.sysctl.include=vm.dirty_background_ratio
+      - --collector.sysctl.include=vm.dirty_ratio
+      - --collector.sysctl.include=vm.min_free_kbytes
+      - --collector.sysctl.include=vm.nr_hugepages
+      - --collector.sysctl.include=net.core.somaxconn
+      - --collector.sysctl.include=net.ipv4.tcp_keepalive_time
+      - --collector.sysctl.include=net.ipv4.tcp_keepalive_intvl
+      - --collector.sysctl.include=net.ipv4.tcp_keepalive_probes
+      # - --collector.sysctl.include=vm.zone_reclaim_mode    # только NUMA-ядра
+      # - --collector.sysctl.include=kernel.numa_balancing   # только NUMA-ядра
     ports:
       - "9100:9100"
 

@@ -7,7 +7,7 @@ global:
     env: dev
 
 scrape_configs:
-  - job_name: node          # слой ОС (и hardware/гипервизор: steal, PSI)
+  - job_name: node          # слой 1 «ОС» (включая сигналы гипервизора: steal, PSI)
     static_configs:
       - targets: ["node-exporter:9100"]
         labels:
@@ -43,7 +43,7 @@ scrape_configs:
           host: demo-host
 
   # самомониторинг Prometheus: prometheus_tsdb_head_series для ряда
-  # «7. Здоровье мониторинга» в pg-layered (рост серий = взрыв кардинальности)
+  # «Monitoring Health» в pg-layered (рост серий = взрыв кардинальности)
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]

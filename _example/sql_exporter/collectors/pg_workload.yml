@@ -2,122 +2,143 @@
 # Всё, что читает pg_stat_statements top-N, — в pg_statements.yml (min_interval 60s)
 collector_name: pg_workload
 
-metrics:
-  # сессии по состояниям — в pg_instance.yml (pg_stat_activity_count)
+# Общие запросы (query_ref, как в pg_instance.yml): скалярные метрики одного
+# источника читают ОДИН результат. Было 10 SQL-выполнений на scrape, стало 4.
+# pg_waiting_sessions не слит с q_activity_scalars: другая форма результата
+# (строки по wait_event_type vs одна строка агрегатов).
+queries:
+  # один скан pg_stat_activity вместо пяти; фильтры каждой метрики — внутри
+  # агрегатов (FILTER), сам скан нарочно БЕЗ WHERE: xmin-горизонт обязан видеть
+  # все процессы (walsender/prepared держат его не хуже клиентских бэкендов)
+  - query_name: q_activity_scalars
+    query: |
+      SELECT
+        COUNT(*) FILTER (WHERE backend_type = 'autovacuum worker')::float8 AS autovacuum_workers,
+        GREATEST(0, COALESCE(EXTRACT(EPOCH FROM MAX(now() - xact_start)
+            FILTER (WHERE backend_type = 'client backend')), 0))::float8 AS oldest_xact_seconds,
+        GREATEST(0, COALESCE(EXTRACT(EPOCH FROM MAX(now() - query_start)
+            FILTER (WHERE backend_type = 'client backend' AND state = 'active')), 0))::float8 AS longest_active_seconds,
+        GREATEST(0, COALESCE(EXTRACT(EPOCH FROM MAX(now() - state_change)
+            FILTER (WHERE backend_type = 'client backend' AND state LIKE 'idle in transaction%')), 0))::float8 AS longest_idle_in_xact_seconds,
+        COALESCE(MAX(age(backend_xmin)), 0)::float8 AS xmin_horizon_age
+      FROM pg_stat_activity
 
-  # на что ждут сессии (activity/waiting_sessions.sql, включая Lock);
-  # отдельного pg_lock_waiters нет — это pg_waiting_sessions{wait_event_type="Lock"}.
+  # один проход по pg_stat_statements вместо трёх; бонус — числитель и
+  # знаменатель панели «Средняя латентность» (exec_seconds / calls) теперь
+  # из одного снапшота
+  - query_name: q_statements_totals
+    query: |
+      SELECT
+        COALESCE(SUM(calls), 0)::float8                  AS calls,
+        COALESCE(SUM(total_exec_time) / 1000, 0)::float8 AS seconds,
+        COALESCE(SUM(rows), 0)::float8                   AS rows,
+        COALESCE(SUM(shared_blks_read), 0)::float8       AS shared_blks_read,
+        COALESCE(SUM(shared_blks_hit), 0)::float8        AS shared_blks_hit,
+        COALESCE(SUM(temp_blks_written), 0)::float8      AS temp_blks_written,
+        COALESCE(SUM(wal_bytes), 0)::float8              AS wal_bytes
+      FROM pg_stat_statements
+
   # Исключены Activity (фоновые процессы в простое) и ClientRead ТОЛЬКО у
   # state='idle' (на проде 200 idle-коннектов из пула затопили бы панель).
   # Остальной Client-класс виден: ClientWrite (backpressure медленного клиента),
   # ClientRead активного бэкенда (застрявший COPY FROM STDIN) и ClientRead
   # idle-in-transaction (держит снапшот и локи)
-  - metric_name: pg_waiting_sessions
-    type: gauge
-    help: "Sessions waiting by wait_event_type, excl. Activity and idle ClientRead (activity/waiting_sessions.sql)"
-    key_labels: [wait_event_type]
-    values: [cnt]
+  - query_name: q_waiting_sessions
     query: |
-      SELECT wait_event_type, COUNT(*)::float8 AS cnt
+      SELECT
+        wait_event_type,
+        COUNT(*)::float8 AS cnt
       FROM pg_stat_activity
       WHERE wait_event_type IS NOT NULL AND pid <> pg_backend_pid()
         AND wait_event_type <> 'Activity'
         AND NOT (COALESCE(state, '') = 'idle' AND wait_event = 'ClientRead')
       GROUP BY 1
 
+  # сэмплер pg_wait_sampling (10 мс): исключены Activity (фоновые в простое)
+  # и Client:ClientRead (idle-сессии) — это "не занятость", они бы затопили
+  # профиль. Client:ClientWrite ОСТАВЛЕН: бэкенд, упёршийся в медленного
+  # клиента/сеть, — реальная занятость
+  - query_name: q_wait_profile
+    query: |
+      SELECT
+        COALESCE(event_type, 'Running') AS event_type,
+        COALESCE(event, 'CPU')          AS event,
+        SUM(count)::float8              AS samples
+      FROM pg_wait_sampling_profile
+      WHERE COALESCE(event_type, 'Running') <> 'Activity'
+        AND NOT (COALESCE(event_type, 'Running') = 'Client' AND event = 'ClientRead')
+      GROUP BY 1, 2
+
+metrics:
+  # сессии по состояниям — в pg_instance.yml (pg_stat_activity_count)
+
+  # на что ждут сессии (activity/waiting_sessions.sql, включая Lock);
+  # отдельного pg_lock_waiters нет — это pg_waiting_sessions{wait_event_type="Lock"}
+  - metric_name: pg_waiting_sessions
+    type: gauge
+    help: "Sessions waiting by wait_event_type, excl. Activity and idle ClientRead (activity/waiting_sessions.sql)"
+    key_labels: [wait_event_type]
+    values: [cnt]
+    query_ref: q_waiting_sessions
+
+  # --- скалярные метрики pg_stat_activity: все из q_activity_scalars ---
   - metric_name: pg_autovacuum_workers
     type: gauge
     help: "Active autovacuum workers vs autovacuum_max_workers (pg_settings_autovacuum_max_workers)"
-    values: [cnt]
-    query: |
-      SELECT COUNT(*)::float8 AS cnt
-      FROM pg_stat_activity
-      WHERE backend_type = 'autovacuum worker'
+    values: [autovacuum_workers]
+    query_ref: q_activity_scalars
 
   - metric_name: pg_oldest_xact_seconds
     type: gauge
     help: "Age of the oldest open transaction (continuous companion of activity/*.sql)"
-    values: [seconds]
-    query: |
-      SELECT GREATEST(0, COALESCE(EXTRACT(EPOCH FROM MAX(now() - xact_start)), 0))::float8 AS seconds
-      FROM pg_stat_activity
-      WHERE backend_type = 'client backend'
+    values: [oldest_xact_seconds]
+    query_ref: q_activity_scalars
 
   - metric_name: pg_longest_active_query_seconds
     type: gauge
     help: "Longest currently running query (continuous companion of activity/long_running_queries.sql)"
-    values: [seconds]
-    query: |
-      SELECT GREATEST(0, COALESCE(EXTRACT(EPOCH FROM MAX(now() - query_start)
-          FILTER (WHERE state = 'active')), 0))::float8 AS seconds
-      FROM pg_stat_activity
-      WHERE backend_type = 'client backend'
+    values: [longest_active_seconds]
+    query_ref: q_activity_scalars
 
   - metric_name: pg_longest_idle_in_xact_seconds
     type: gauge
     help: "Longest idle-in-transaction (activity/idle_in_transaction.sql)"
-    values: [seconds]
-    query: |
-      SELECT GREATEST(0, COALESCE(EXTRACT(EPOCH FROM MAX(now() - state_change)
-          FILTER (WHERE state LIKE 'idle in transaction%')), 0))::float8 AS seconds
-      FROM pg_stat_activity
-      WHERE backend_type = 'client backend'
+    values: [longest_idle_in_xact_seconds]
+    query_ref: q_activity_scalars
 
   # чем держится xmin-горизонт: vacuum не может чистить старше этого (activity/idle_in_transaction.sql)
   - metric_name: pg_xmin_horizon_age
     type: gauge
     help: "Age of oldest backend_xmin: how far vacuum is held back"
-    values: [age]
-    query: |
-      SELECT COALESCE(MAX(age(backend_xmin)), 0)::float8 AS age
-      FROM pg_stat_activity
+    values: [xmin_horizon_age]
+    query_ref: q_activity_scalars
 
   # --- pg_stat_statements: глобальные счётчики (дешёвые SUM, остаются на 15s:
-  #     их едят панели QPS/латентности с окном [1m]) ---
+  #     их едят панели QPS/латентности с окном [1m]) — все из q_statements_totals ---
   - metric_name: pg_statements_calls_total
     type: counter
     help: "Total statement calls (queries/statements_export_topn.sql)"
     values: [calls]
-    query: |
-      SELECT COALESCE(SUM(calls), 0)::float8 AS calls
-      FROM pg_stat_statements
+    query_ref: q_statements_totals
 
   - metric_name: pg_statements_exec_seconds_total
     type: counter
     help: "Total statement execution time, seconds"
     values: [seconds]
-    query: |
-      SELECT COALESCE(SUM(total_exec_time) / 1000, 0)::float8 AS seconds
-      FROM pg_stat_statements
+    query_ref: q_statements_totals
 
   - metric_name: pg_statements_resources_total
     type: counter
     help: "Global resource counters from pg_stat_statements (queries/top_*.sql)"
     value_label: kind
     values: [rows, shared_blks_read, shared_blks_hit, temp_blks_written, wal_bytes]
-    query: |
-      SELECT COALESCE(SUM(rows), 0)::float8 AS rows,
-             COALESCE(SUM(shared_blks_read), 0)::float8 AS shared_blks_read,
-             COALESCE(SUM(shared_blks_hit), 0)::float8 AS shared_blks_hit,
-             COALESCE(SUM(temp_blks_written), 0)::float8 AS temp_blks_written,
-             COALESCE(SUM(wal_bytes), 0)::float8 AS wal_bytes
-      FROM pg_stat_statements
+    query_ref: q_statements_totals
 
   # --- continuous profiling: сэмплер ожиданий pg_wait_sampling (10 мс) ---
-  # rate(samples)/100 = среднее число сессий в этом состоянии (AAS);
-  # исключены Activity (фоновые в простое) и Client:ClientRead (idle-сессии) —
-  # это "не занятость", они бы затопили профиль. Client:ClientWrite ОСТАВЛЕН:
-  # бэкенд, упёршийся в медленного клиента/сеть, — реальная занятость
+  # rate(samples)/100 = среднее число сессий в этом состоянии (AAS)
   - metric_name: pg_wait_profile_total
     type: counter
     help: "Sampled wait events by class/event, 10ms period (pg_wait_sampling); rate/100 = AAS; excl. Activity and ClientRead"
     key_labels: [event_type, event]
     values: [samples]
-    query: |
-      SELECT COALESCE(event_type, 'Running') AS event_type,
-             COALESCE(event, 'CPU') AS event,
-             SUM(count)::float8 AS samples
-      FROM pg_wait_sampling_profile
-      WHERE COALESCE(event_type, 'Running') <> 'Activity'
-        AND NOT (COALESCE(event_type, 'Running') = 'Client' AND event = 'ClientRead')
-      GROUP BY 1, 2
+    query_ref: q_wait_profile
