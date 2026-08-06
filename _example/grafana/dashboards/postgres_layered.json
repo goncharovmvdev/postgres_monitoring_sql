@@ -593,7 +593,7 @@
               },
               {
                 "id": "displayName",
-                "value": "параметр (рекомендация)"
+                "value": "parameter (recommendation)"
               }
             ]
           },
@@ -605,7 +605,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "значение"
+                "value": "value"
               }
             ]
           }
@@ -614,77 +614,77 @@
       "targets": [
         {
           "expr": "count(node_cpu_seconds_total{host=~\"$host\",mode=\"idle\"})",
-          "legendFormat": "ядер CPU",
+          "legendFormat": "CPU cores",
           "refId": "R",
           "instant": true,
           "range": false
         },
         {
           "expr": "round(node_memory_MemTotal_bytes{host=~\"$host\"} / 2^30 * 10) / 10",
-          "legendFormat": "RAM всего, GiB",
+          "legendFormat": "RAM total, GiB",
           "refId": "S",
           "instant": true,
           "range": false
         },
         {
           "expr": "round(node_memory_SwapTotal_bytes{host=~\"$host\"} / 2^30 * 10) / 10",
-          "legendFormat": "swap всего, GiB (0 = swap отсутствует)",
+          "legendFormat": "swap total, GiB (0 = no swap)",
           "refId": "T",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_vm_swappiness{host=~\"$host\"}",
-          "legendFormat": "vm.swappiness (реком. 1–10)",
+          "legendFormat": "vm.swappiness (rec. 1–10)",
           "refId": "A",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_vm_overcommit_memory{host=~\"$host\"}",
-          "legendFormat": "vm.overcommit_memory (реком. 2; при 0 — обязателен OOMScoreAdjust=-1000)",
+          "legendFormat": "vm.overcommit_memory (rec. 2; with 0, OOMScoreAdjust=-1000 is a must)",
           "refId": "B",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_vm_overcommit_ratio{host=~\"$host\"}",
-          "legendFormat": "vm.overcommit_ratio (при overcommit_memory=2: ~90)",
+          "legendFormat": "vm.overcommit_ratio (with overcommit_memory=2: ~90)",
           "refId": "C",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_vm_dirty_background_bytes{host=~\"$host\"}",
-          "legendFormat": "vm.dirty_background_bytes, байт (реком. ~256MB; 0 = действует ratio)",
+          "legendFormat": "vm.dirty_background_bytes (rec. ~256MB; 0 = ratio applies)",
           "refId": "D",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_vm_dirty_bytes{host=~\"$host\"}",
-          "legendFormat": "vm.dirty_bytes, байт (реком. ~1GB; 0 = действует ratio)",
+          "legendFormat": "vm.dirty_bytes (rec. ~1GB; 0 = ratio applies)",
           "refId": "E",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_vm_dirty_background_ratio{host=~\"$host\"}",
-          "legendFormat": "vm.dirty_background_ratio (если *_bytes=0)",
+          "legendFormat": "vm.dirty_background_ratio (if *_bytes=0)",
           "refId": "F",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_vm_dirty_ratio{host=~\"$host\"}",
-          "legendFormat": "vm.dirty_ratio (если *_bytes=0)",
+          "legendFormat": "vm.dirty_ratio (if *_bytes=0)",
           "refId": "G",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_vm_zone_reclaim_mode{host=~\"$host\"}",
-          "legendFormat": "vm.zone_reclaim_mode (реком. 0)",
+          "legendFormat": "vm.zone_reclaim_mode (rec. 0)",
           "refId": "H",
           "instant": true,
           "range": false
@@ -698,49 +698,49 @@
         },
         {
           "expr": "node_sysctl_vm_nr_hugepages{host=~\"$host\"}",
-          "legendFormat": "vm.nr_hugepages (реком. ≥ shared_memory_size_in_huge_pages — см. настройки PG, слой 2)",
+          "legendFormat": "vm.nr_hugepages (rec. ≥ shared_memory_size_in_huge_pages — see Instance Settings)",
           "refId": "J",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_memory_HugePages_Total{host=~\"$host\"}",
-          "legendFormat": "HugePages_Total (meminfo, факт)",
+          "legendFormat": "HugePages_Total (meminfo, actual)",
           "refId": "K",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_memory_HugePages_Free{host=~\"$host\"}",
-          "legendFormat": "HugePages_Free (0 при работающем PG = страницы заняты БД)",
+          "legendFormat": "HugePages_Free (0 with PG running = pages taken by the DB)",
           "refId": "L",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_kernel_numa_balancing{host=~\"$host\"}",
-          "legendFormat": "kernel.numa_balancing (реком. 0 на multi-socket)",
+          "legendFormat": "kernel.numa_balancing (rec. 0 on multi-socket)",
           "refId": "M",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_net_core_somaxconn{host=~\"$host\"}",
-          "legendFormat": "net.core.somaxconn (реком. ≥1024)",
+          "legendFormat": "net.core.somaxconn (rec. ≥1024)",
           "refId": "N",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_net_ipv4_tcp_keepalive_time{host=~\"$host\"}",
-          "legendFormat": "net.ipv4.tcp_keepalive_time, сек",
+          "legendFormat": "net.ipv4.tcp_keepalive_time, s",
           "refId": "O",
           "instant": true,
           "range": false
         },
         {
           "expr": "node_sysctl_net_ipv4_tcp_keepalive_intvl{host=~\"$host\"}",
-          "legendFormat": "net.ipv4.tcp_keepalive_intvl, сек",
+          "legendFormat": "net.ipv4.tcp_keepalive_intvl, s",
           "refId": "P",
           "instant": true,
           "range": false
@@ -764,7 +764,7 @@
           }
         }
       ],
-      "description": "Watch: values diverging from the recommendation in the row name; a missing row means NOT collected (no include flag or the sysctl is absent in this kernel), not 'all good'. Fix: sysctl -w + /etc/sysctl.d, never during an incident; nr_hugepages ≥ shared_memory_size_in_huge_pages (Instance Settings). Requires --collector.sysctl; net.* in the demo shows the container netns."
+      "description": "Watch: values diverging from the recommendation in the row name; a missing row means NOT collected (no include flag or the sysctl is absent in this kernel), not 'all good'. Fix: sysctl -w + /etc/sysctl.conf"
     },
     {
       "id": 633,
@@ -778,7 +778,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "| что | где / реком. |\n|---|---|\n| THP | `/sys/kernel/mm/transparent_hugepage/enabled` → **never** (или madvise) |\n| I/O scheduler | `/sys/block/<dev>/queue/scheduler` → **none** (NVMe) / **mq-deadline** (SSD) |\n| readahead | `/sys/block/<dev>/queue/read_ahead_kb` → 128 OLTP / 2048–4096 аналитика |\n| CPU governor | `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor` → **performance** |\n| clocksource | `.../clocksource0/current_clocksource` → **tsc** |\n| noatime | `mount \\| grep <data-fs>` |\n| Limit*/TasksMax | `/proc/<postmaster>/limits`, `systemctl show postgresql` |\n\nПрод: снимать textfile-коллектором node_exporter (cron пишет `.prom`)."
+        "content": "| what | recommended |\n|---|---|\n| THP | `/sys/kernel/mm/transparent_hugepage/enabled` → **never** (или madvise) |\n| I/O scheduler | `/sys/block/<dev>/queue/scheduler` → **none** (NVMe) / **mq-deadline** (SSD) |\n| readahead | `/sys/block/<dev>/queue/read_ahead_kb` → 128 OLTP / 2048–4096 аналитика |\n| CPU governor | `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor` → **performance** |\n| clocksource | `.../clocksource0/current_clocksource` → **tsc** |\n| noatime | `mount \\| grep <data-fs>` |\n| Limit*/TasksMax | `/proc/<postmaster>/limits`, `systemctl show postgresql` |\n\nПрод: снимать textfile-коллектором node_exporter (cron пишет `.prom`)."
       }
     },
     {
@@ -832,7 +832,7 @@
           "refId": "A"
         }
       ],
-      "description": "When the DB is down the pg_up series DISAPPEARS rather than becoming 0 — «or on() vector(0)» renders a red zero; alert on absent(pg_up). Fix: exporter/network/database — collection health is up{job=~\"sql-.*\"} (Monitoring Health)."
+      "description": "When the DB is down the pg_up series DISAPPEARS. Fix: exporter/network/database — collection health is up{job=~\"sql-.*\"}"
     },
     {
       "id": 614,
@@ -874,7 +874,7 @@
           "legendFormat": ""
         }
       ],
-      "description": "Watch: a sharp drop = restart/crash-recovery/failover (red — younger than 10 min). Fix: reason in PG logs; cross-check OOM Kills (OS)."
+      "description": "Watch: a sharp drop = restart/crash-recovery/failover (red — younger than 10 min). Fix: reason in PG logs; cross-check OOM Kills"
     },
     {
       "id": 319,
@@ -902,7 +902,7 @@
           "refId": "A"
         }
       ],
-      "description": "Watch: growth beyond max_wal_size. Fix: dead slot (Replication Slots), stuck archiver (WAL Archiver), checkpoints not keeping up (Checkpoints)."
+      "description": "Watch: growth beyond max_wal_size. Fix: dead slot (Replication Slots), stuck archiver (WAL Archiver), checkpoints not keeping up"
     },
     {
       "id": 302,
@@ -2425,6 +2425,38 @@
       "description": "Watch: total height vs cores and the dominating class; a Lock-class plateau of height N = N sessions queued. OK: AAS < cores. Fix: Lock → Blocking Sessions; IO → Disk Reads/Writes by Backend + tops; CPU → Top Queries by CPU."
     },
     {
+      "id": 623,
+      "type": "table",
+      "title": "Blocking Sessions",
+      "datasource": {
+        "type": "postgres",
+        "uid": "pg-${db}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 168
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  w.pid                                                   AS waiter_pid,\n  bp.pid                                                  AS blocker_pid,\n  w.usename                                               AS waiter_user,\n  b.usename                                               AS blocker_user,\n  b.state                                                 AS blocker_state,\n  ROUND(EXTRACT(EPOCH FROM (now() - w.state_change)))::int AS wait_s,\n  COALESCE(w.query_id::text, '')                          AS waiter_queryid,\n  LEFT(regexp_replace(w.query, '\\s+', ' ', 'g'), 70)      AS waiter_query,\n  LEFT(regexp_replace(b.query, '\\s+', ' ', 'g'), 70)      AS blocker_last_query\nFROM pg_stat_activity w\nCROSS JOIN LATERAL unnest(pg_blocking_pids(w.pid)) AS bp(pid)\nJOIN pg_stat_activity b ON b.pid = bp.pid\nWHERE w.wait_event_type = 'Lock'\nORDER BY wait_s DESC\nLIMIT 20",
+          "datasource": {
+            "type": "postgres",
+            "uid": "pg-${db}"
+          }
+        }
+      ],
+      "description": "Empty = no lock queue. blocker_state = idle in transaction — the classic root cause. Live SQL as role monitoring (timeouts 5s/1s); the datasource follows the instance selector (uid pg-${db}; on «datasource not found» revert to $pgds). Fix: terminate the blocker, fix the client."
+    },
+    {
       "id": 516,
       "type": "timeseries",
       "title": "Top Queries by Wait Time",
@@ -2436,7 +2468,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 168
+        "y": 176
       },
       "fieldConfig": {
         "defaults": {
@@ -2469,7 +2501,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 168
+        "y": 176
       },
       "fieldConfig": {
         "defaults": {
@@ -2498,7 +2530,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 176
+        "y": 184
       },
       "fieldConfig": {
         "defaults": {
@@ -2527,7 +2559,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 176
+        "y": 184
       },
       "fieldConfig": {
         "defaults": {
@@ -2556,7 +2588,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 184
+        "y": 192
       },
       "fieldConfig": {
         "defaults": {
@@ -2611,7 +2643,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 184
+        "y": 192
       },
       "fieldConfig": {
         "defaults": {
@@ -2645,7 +2677,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 191
+        "y": 199
       },
       "fieldConfig": {
         "defaults": {
@@ -2674,7 +2706,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 191
+        "y": 199
       },
       "fieldConfig": {
         "defaults": {
@@ -2703,7 +2735,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 198
+        "y": 206
       },
       "fieldConfig": {
         "defaults": {
@@ -2732,7 +2764,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 198
+        "y": 206
       },
       "fieldConfig": {
         "defaults": {
@@ -2761,7 +2793,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 198
+        "y": 206
       },
       "fieldConfig": {
         "defaults": {
@@ -2790,7 +2822,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 205
+        "y": 213
       },
       "fieldConfig": {
         "defaults": {
@@ -2824,7 +2856,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 205
+        "y": 213
       },
       "fieldConfig": {
         "defaults": {
@@ -2853,7 +2885,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 205
+        "y": 213
       },
       "fieldConfig": {
         "defaults": {
@@ -2882,7 +2914,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 212
+        "y": 220
       },
       "fieldConfig": {
         "defaults": {},
@@ -2934,38 +2966,6 @@
         }
       ],
       "description": "Texts for top-10 by time/WAL/temp. For queryids from other tops — SQL straight into pgss (SELECT query FROM pg_stat_statements WHERE queryid = ...)."
-    },
-    {
-      "id": 623,
-      "type": "table",
-      "title": "Blocking Sessions",
-      "datasource": {
-        "type": "postgres",
-        "uid": "pg-${db}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 220
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  w.pid                                                   AS waiter_pid,\n  bp.pid                                                  AS blocker_pid,\n  w.usename                                               AS waiter_user,\n  b.usename                                               AS blocker_user,\n  b.state                                                 AS blocker_state,\n  ROUND(EXTRACT(EPOCH FROM (now() - w.state_change)))::int AS wait_s,\n  COALESCE(w.query_id::text, '')                          AS waiter_queryid,\n  LEFT(regexp_replace(w.query, '\\s+', ' ', 'g'), 70)      AS waiter_query,\n  LEFT(regexp_replace(b.query, '\\s+', ' ', 'g'), 70)      AS blocker_last_query\nFROM pg_stat_activity w\nCROSS JOIN LATERAL unnest(pg_blocking_pids(w.pid)) AS bp(pid)\nJOIN pg_stat_activity b ON b.pid = bp.pid\nWHERE w.wait_event_type = 'Lock'\nORDER BY wait_s DESC\nLIMIT 20",
-          "datasource": {
-            "type": "postgres",
-            "uid": "pg-${db}"
-          }
-        }
-      ],
-      "description": "Empty = no lock queue. blocker_state = idle in transaction — the classic root cause. Live SQL as role monitoring (timeouts 5s/1s); the datasource follows the instance selector (uid pg-${db}; on «datasource not found» revert to $pgds). Fix: terminate the blocker, fix the client."
     },
     {
       "id": 600,
