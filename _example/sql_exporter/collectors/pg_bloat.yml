@@ -1,7 +1,11 @@
 # оценка bloat (fixes.txt MEDIUM): dead tuples != bloat — вакуум обнуляет
-# счётчик, место не возвращает. Запрос тяжёлый (полный проход по pg_stats):
+# счётчик, место не возвращает. Запрос тяжёлый (полный проход по статистике):
 # min_interval 1h обязателен, на частотах 15s-5m ставить НЕЛЬЗЯ.
 # Адаптация tables/table_bloat_estimate.sql, top-20 по потерянным байтам
+# Источник статистики — monitoring_column_stats (init/01_monitoring.sql), а не
+# pg_stats: узкая вью отдаёт только null_frac/avg_width и позволяет обойтись
+# БЕЗ pg_read_all_data (роль не может читать данные таблиц). Вью нужна в
+# каждой базе, с которой собирается bloat.
 collector_name: pg_bloat
 min_interval: 1h
 
@@ -26,12 +30,12 @@ queries:
             c.hdr + 1 + (
               SELECT
                 COUNT(*)
-              FROM pg_stats s2
+              FROM monitoring_column_stats s2
               WHERE s2.schemaname = s.schemaname
                 AND s2.tablename = s.tablename
                 AND s2.null_frac <> 0
             ) / 8 AS nullhdr
-          FROM pg_stats s
+          FROM monitoring_column_stats s
           CROSS JOIN constants c
           WHERE s.schemaname NOT IN ('pg_catalog', 'information_schema')
           GROUP BY s.schemaname, s.tablename, c.bs, c.hdr, c.ma
@@ -140,7 +144,7 @@ queries:
             SUM((1 - COALESCE(s.null_frac, 0)) * COALESCE(s.avg_width, 1024)) AS nulldatawidth
           FROM index_cols ic
           JOIN pg_namespace n ON n.oid = ic.relnamespace
-          JOIN pg_stats s ON s.schemaname = n.nspname
+          JOIN monitoring_column_stats s ON s.schemaname = n.nspname
                          AND s.tablename = ic.attrelname
                          AND s.attname = ic.attname
                          AND NOT s.inherited

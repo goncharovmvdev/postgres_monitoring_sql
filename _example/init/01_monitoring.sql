@@ -13,11 +13,38 @@ ALTER ROLE monitoring SET idle_in_transaction_session_timeout = '10s';
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO monitoring;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO monitoring;
 
--- pg_stats (bloat-оценка) отдаёт строки только по таблицам, которые роль
--- может читать: pg_monitor этого не даёт, вью пустая -> bloat всегда No data.
--- pg_read_all_data (PG14+) — осознанный компромисс: мониторинг сможет читать
--- ДАННЫЕ всех таблиц; альтернатива в проде — security definer-вью
-GRANT pg_read_all_data TO monitoring;
+-- Статистика для bloat-оценки БЕЗ права читать данные.
+-- Проблема: pg_stats фильтрует строки по has_column_privilege(current_user) —
+-- под pg_monitor вью пустая, а pg_read_all_data (прежнее решение) отдал бы
+-- мониторингу ДАННЫЕ всех таблиц. Фильтр в pg_stats не случаен: она показывает
+-- most_common_vals/histogram_bounds, то есть буквальные значения из таблиц.
+-- Решение: вью владельца (postgres) поверх pg_statistic НАПРЯМУЮ, только с
+-- колонками, которые нужны оценке — null_frac и avg_width. Значений (stavalues*,
+-- stanumbers*) в ней нет, утекать нечему.
+-- Почему не вью поверх pg_stats: вью выполняется с правами ВЛАДЕЛЬЦА, но
+-- current_user не подменяет (в отличие от SECURITY DEFINER-функции), поэтому
+-- внутренний has_column_privilege всё равно спросит про monitoring -> 0 строк.
+-- ВНИМАНИЕ (мультибазовый кластер): pg_statistic — каталог УРОВНЯ БАЗЫ, вью
+-- нужна в каждой базе, с которой собирается bloat. Раскатка: цикл psql по
+-- pg_database + та же вью в template1, чтобы её наследовали новые базы.
+-- На физическую реплику приезжает сама, вместе с WAL.
+CREATE VIEW monitoring_column_stats AS
+SELECT
+  n.nspname     AS schemaname,
+  c.relname     AS tablename,
+  a.attname,
+  s.stainherit  AS inherited,
+  s.stanullfrac AS null_frac,
+  s.stawidth    AS avg_width
+FROM pg_statistic s
+JOIN pg_class c     ON c.oid = s.starelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = s.staattnum
+WHERE NOT a.attisdropped;
+
+-- security_invoker НЕ включать (PG15+): с ним проверка прав уедет на monitoring
+-- и вью снова станет пустой
+GRANT SELECT ON monitoring_column_stats TO monitoring;
 
 -- расширение для метрик уровня workload
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
