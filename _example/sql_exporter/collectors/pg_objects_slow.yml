@@ -35,6 +35,7 @@ queries:
   - query_name: q_index_hygiene
     query: |
       SELECT
+        current_database() AS datname,
         u.count,
         u.bytes,
         i.cnt
@@ -54,9 +55,14 @@ queries:
       ) i
 
   # ТРЕБУЕТ грантов: pg_sequences.last_value = NULL без SELECT/USAGE на sequence
-  # (см. init/01_monitoring.sql); NULL здесь = sequence ещё не использовалась.
-  # top-5 С ИМЕНЕМ: безымянный "worst %" не actionable — не видно, какую
-  # sequence чинить (мигрировать на bigint / setval)
+  # (см. init/01_monitoring.sql); NULL здесь = sequence ещё не использовалась (0%).
+  # Формула считает израсходованную долю ДИАПАЗОНА В НАПРАВЛЕНИИ increment:
+  # last_value/max_value неверно для убывающих sequence (increment < 0),
+  # нестандартного min_value и отрицательных значений. ::numeric обязателен —
+  # max_value - min_value у bigint-sequence переполняет bigint.
+  # cycle в лейбле: у CYCLE-sequence исчерпания не бывает (она заворачивается,
+  # риск другой — конфликт уникальности), панель исчерпания их исключает.
+  # top-5 С ИМЕНЕМ: безымянный "worst %" не actionable
   - query_name: q_sequences
     query: |
       (
@@ -64,13 +70,20 @@ queries:
           current_database() AS datname,
           schemaname,
           sequencename       AS seqname,
-          (100.0 * COALESCE(last_value, 0)::numeric / NULLIF(max_value, 0))::float8 AS pct
+          cycle::text        AS cycle,
+          CASE
+            WHEN last_value IS NULL THEN 0
+            WHEN increment_by > 0 THEN 100.0 * (last_value::numeric - min_value::numeric)
+                                        / NULLIF(max_value::numeric - min_value::numeric, 0)
+            ELSE 100.0 * (max_value::numeric - last_value::numeric)
+                       / NULLIF(max_value::numeric - min_value::numeric, 0)
+          END::float8 AS pct
         FROM pg_sequences
         ORDER BY pct DESC
         LIMIT 5
       )
       UNION ALL
-      SELECT current_database(), '(none)', '(none)', 0::float8
+      SELECT current_database(), '(none)', '(none)', 'false', 0::float8
       WHERE NOT EXISTS (SELECT 1 FROM pg_sequences)
 
 metrics:
@@ -94,6 +107,7 @@ metrics:
   - metric_name: pg_unused_indexes
     type: gauge
     help: "Indexes with zero scans, excl. PK/unique (indexes/unused_indexes.sql)"
+    key_labels: [datname]
     value_label: kind
     values: [count, bytes]
     query_ref: q_index_hygiene
@@ -101,13 +115,14 @@ metrics:
   - metric_name: pg_invalid_indexes
     type: gauge
     help: "Invalid indexes count (indexes/invalid_indexes.sql)"
+    key_labels: [datname]
     values: [cnt]
     query_ref: q_index_hygiene
 
   # --- исчерпание sequences (tables/sequence_exhaustion.sql) ---
   - metric_name: pg_sequence_used_pct
     type: gauge
-    help: "Top-5 sequences by usage percent (tables/sequence_exhaustion.sql); needs SELECT on sequences"
-    key_labels: [datname, schemaname, seqname]
+    help: "Top-5 sequences by consumed share of their range in the increment direction (handles descending/min_value/negative increment); cycle=true cannot be exhausted; needs SELECT on sequences"
+    key_labels: [datname, schemaname, seqname, cycle]
     values: [pct]
     query_ref: q_sequences

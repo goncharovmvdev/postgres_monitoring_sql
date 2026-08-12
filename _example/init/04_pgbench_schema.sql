@@ -1,5 +1,8 @@
 -- SQL-эквивалент `pgbench -i -s 5`: схема и данные создаются декларативно
--- при initdb, а сервису load остаётся только крутить транзакции
+-- при initdb, а сервису load остаётся только крутить транзакции.
+-- Схема живёт в ПРИКЛАДНОЙ базе appdb (init/03_appdb.sql), не в служебной postgres
+\c appdb
+
 CREATE TABLE pgbench_branches (
     bid      INT PRIMARY KEY,
     bbalance INT,

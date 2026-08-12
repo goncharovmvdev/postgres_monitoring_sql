@@ -13,6 +13,15 @@ ALTER ROLE monitoring SET idle_in_transaction_session_timeout = '10s';
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO monitoring;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO monitoring;
 
+-- ошибки конфигов для pg_config_file_errors (pg_instance_slow.yml): обе вью
+-- суперюзерные — pg_monitor/pg_read_all_settings их НЕ открывают (проверено на
+-- PG17), и грантить надо И вью, И функцию под ней (вью — тонкая обёртка,
+-- проверка прав срабатывает на функции). На реплику гранты приезжают с WAL
+GRANT EXECUTE ON FUNCTION pg_hba_file_rules() TO monitoring;
+GRANT SELECT ON pg_hba_file_rules TO monitoring;
+GRANT EXECUTE ON FUNCTION pg_show_all_file_settings() TO monitoring;
+GRANT SELECT ON pg_file_settings TO monitoring;
+
 -- Статистика для bloat-оценки БЕЗ права читать данные.
 -- Проблема: pg_stats фильтрует строки по has_column_privilege(current_user) —
 -- под pg_monitor вью пустая, а pg_read_all_data (прежнее решение) отдал бы
@@ -27,7 +36,8 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON SEQUENCES TO monitorin
 -- ВНИМАНИЕ (мультибазовый кластер): pg_statistic — каталог УРОВНЯ БАЗЫ, вью
 -- нужна в каждой базе, с которой собирается bloat. Раскатка: цикл psql по
 -- pg_database + та же вью в template1, чтобы её наследовали новые базы.
--- На физическую реплику приезжает сама, вместе с WAL.
+-- В демо копия для прикладной appdb — init/03_appdb.sql (bloat собирается
+-- только оттуда, job'ы pgNN-appdb). На физическую реплику приезжает сама, с WAL.
 CREATE VIEW monitoring_column_stats AS
 SELECT
   n.nspname     AS schemaname,

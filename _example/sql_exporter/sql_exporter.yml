@@ -5,29 +5,67 @@ global:
   max_connections: 3
   max_idle_connections: 3
 
-# мультитаргетный режим: один экспортёр опрашивает primary и реплику,
-# метрики различаются лейблами job/instance.
-# Prometheus скрейпит КАЖДЫЙ job отдельным таргетом (params jobs[]= в
-# prometheus.yml): у инстансов независимые sample_limit и up{}
-# коллекторы разведены по частотам (fixes.txt CRITICAL "защита сбора" + ИНТЕРВАЛЫ):
-# fast 15s: pg_instance, pg_workload; 60s: pg_instance_slow, pg_statements, pg_objects;
-# 300s: pg_objects_slow; 1h: pg_bloat — частоты заданы min_interval внутри коллекторов
+# IDENTITY MODEL (см. README «Модель идентичности»)
+# Лейблы описывают ГДЕ снято, а не ЧТО происходит:
+#   cluster/env — external_labels в prometheus.yml (логический кластер)
+#   node        — идентичность НОДЫ (pg01/pg02), НЕ роль: после failover нода
+#                 остаётся собой, серии не рвутся и конфиги не правятся
+#   host        — ОС-хост, задаётся в prometheus.yml (джойн с node_exporter)
+#   datname     — база (только у per-database метрик)
+# Роль (primary/standby) — это СОСТОЯНИЕ, её отдают метрики pg_in_recovery /
+# pg_role_info из pg_instance.yml, а панели выбирают роль в PromQL:
+#   <метрика> and on(node) (pg_in_recovery == 0)
+# job_name намеренно совпадает с именем ноды: чтобы даже технический лейбл job
+# не врал после переключения ролей.
+#
+# Набор коллекторов у нод ОДИНАКОВЫЙ (включая pg_standby): любая нода может
+# завтра оказаться в другой роли, и метрики обязаны появиться без правки конфига.
+# Коллекторы разведены по частотам (min_interval внутри коллекторов):
+# 15s: pg_instance, pg_workload; 60s: pg_instance_slow, pg_statements, pg_objects;
+# 300s: pg_objects_slow; 1h: pg_bloat
+#
+# ДВЕ БАЗЫ НА НОДУ (прод-паттерн, см. init/03_appdb.sql): инстансовые коллекторы
+# читают КЛАСТЕРНЫЕ вью и живут на служебной postgres; объектные каталоги
+# (pg_stat_user_tables, pg_sequences, pg_statistic) видны только из подключённой
+# базы — поэтому pg_objects/pg_objects_slow/pg_bloat идут отдельным job'ом
+# pgNN-appdb с DSN в прикладную appdb. Новая наблюдаемая база = ещё один такой
+# job (+ пер-базовая обвязка из init/03). pg_probe — liveness этого DSN:
+# без него обрыв до appdb был бы нем (pg_up здесь нет). node у пары job'ов
+# ОДИН — это та же нода, лейблы описывают ГДЕ снято
 jobs:
-  - job_name: primary
+  - job_name: pg01
     collectors: [pg_instance, pg_instance_slow, pg_workload, pg_statements,
-                 pg_objects, pg_objects_slow, pg_bloat]
+                 pg_standby]
     static_configs:
       - targets:
-          primary: "postgres://monitoring:monitoring@postgres:5432/postgres?sslmode=disable"
+          pg01: "postgres://monitoring:monitoring@postgres:5432/postgres?sslmode=disable"
+        labels:
+          node: pg01
 
-  # standby снимает тот же общий набор + свой pg_standby;
-  # общие коллекторы написаны recovery-safe (см. CASE pg_is_in_recovery в pg_instance.yml)
-  - job_name: standby
-    collectors: [pg_instance, pg_instance_slow, pg_workload, pg_statements,
-                 pg_objects, pg_objects_slow, pg_bloat, pg_standby]
+  - job_name: pg01-appdb
+    collectors: [pg_probe, pg_objects, pg_objects_slow, pg_bloat]
     static_configs:
       - targets:
-          replica: "postgres://monitoring:monitoring@replica:5432/postgres?sslmode=disable"
+          pg01-appdb: "postgres://monitoring:monitoring@postgres:5432/appdb?sslmode=disable"
+        labels:
+          node: pg01
+
+  - job_name: pg02
+    collectors: [pg_instance, pg_instance_slow, pg_workload, pg_statements,
+                 pg_standby]
+    static_configs:
+      - targets:
+          pg02: "postgres://monitoring:monitoring@replica:5432/postgres?sslmode=disable"
+        labels:
+          node: pg02
+
+  - job_name: pg02-appdb
+    collectors: [pg_probe, pg_objects, pg_objects_slow, pg_bloat]
+    static_configs:
+      - targets:
+          pg02-appdb: "postgres://monitoring:monitoring@replica:5432/appdb?sslmode=disable"
+        labels:
+          node: pg02
 
 collector_files:
   - /etc/sql_exporter/collectors/*.yml

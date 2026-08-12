@@ -1,0 +1,683 @@
+{
+  "uid": "pg-queries",
+  "title": "PostgreSQL: Queries",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Failover",
+        "enable": true,
+        "iconColor": "red",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "changes(pg_timeline_id[2m]) > 0",
+        "step": "60s",
+        "target": {
+          "expr": "changes(pg_timeline_id[2m]) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "Promote / failover",
+        "textFormat": "{{node}}: timeline changed (promote)"
+      },
+      {
+        "name": "PostgreSQL restart",
+        "enable": true,
+        "iconColor": "orange",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "resets(pg_postmaster_uptime_seconds{node=~\"$node\"}[5m]) > 0",
+        "step": "60s",
+        "target": {
+          "expr": "resets(pg_postmaster_uptime_seconds{node=~\"$node\"}[5m]) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "PostgreSQL restart",
+        "textFormat": "{{node}}"
+      },
+      {
+        "name": "Stats reset",
+        "enable": true,
+        "iconColor": "blue",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "resets(pg_statements_calls_total{node=~\"$node\"}[10m]) > 0",
+        "step": "60s",
+        "target": {
+          "expr": "resets(pg_statements_calls_total{node=~\"$node\"}[10m]) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "pg_stat_statements reset",
+        "textFormat": "{{node}} — counters restarted from zero"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "node",
+        "label": "Нода",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(pg_up, node)",
+          "refId": "var"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "pg01",
+          "value": "pg01"
+        },
+        "description": "Идентичность НОДЫ, не роль: после failover нода остаётся собой. Роль показывают панели Node Roles / pg_role_info."
+      },
+      {
+        "name": "host",
+        "label": "Хост",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(pg_up{node=~\"$node\"}, host)",
+          "refId": "var"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "demo-host",
+          "value": "demo-host"
+        }
+      },
+      {
+        "name": "queryid",
+        "label": "Query ID",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "description": "queryid для живой расшифровки; заполняется кликом «Show query text» на любой top-панели"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "← Overview",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/pg-overview",
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false,
+      "targetBlank": false,
+      "tags": []
+    },
+    {
+      "title": "Layers (incident)",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/pg-layered",
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false,
+      "targetBlank": false,
+      "tags": []
+    }
+  ],
+  "panels": [
+    {
+      "id": 530,
+      "type": "table",
+      "title": "Query Text (live lookup — ignores dashboard time range)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "pg-${node}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 800
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "datasource": {
+            "type": "postgres",
+            "uid": "pg-${node}"
+          },
+          "rawSql": "SELECT s.queryid::text AS queryid, d.datname, s.calls,\n       ROUND(s.total_exec_time::numeric, 1) AS total_ms,\n       ROUND(s.mean_exec_time::numeric, 3) AS mean_ms,\n       regexp_replace(s.query, '\\s+', ' ', 'g') AS query\nFROM pg_stat_statements s\nJOIN pg_database d ON d.oid = s.dbid\nWHERE ${queryid:sqlstring} = '' OR s.queryid::text = ${queryid:sqlstring}\nORDER BY s.total_exec_time DESC\nLIMIT 20"
+        }
+      ],
+      "description": "Resolves ANY queryid, not just the top-10 baked into pg_query_info: click «Show query text» on any top panel and the id lands in the Query ID box. Empty box = top-20 by total time. Live SQL under role monitoring (statement_timeout 5s), so it shows the current pgss content regardless of the dashboard time range."
+    },
+    {
+      "id": 505,
+      "type": "timeseries",
+      "title": "Top Queries by Time",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(pg_top_query_exec_seconds_total{node=~\"$node\"}[5m]))",
+          "legendFormat": "{{datname}} qid={{queryid}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Share of DB time (can exceed 1 — parallelism). Fix: the culprit's plan — auto_explain (grep qid=)."
+    },
+    {
+      "id": 506,
+      "type": "timeseries",
+      "title": "Top Queries by Calls",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(pg_top_query_calls_total{node=~\"$node\"}[5m]))",
+          "legendFormat": "{{datname}} qid={{queryid}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Watch: traffic concentration in a handful of queries. Fix: client-side caching/batching."
+    },
+    {
+      "id": 509,
+      "type": "timeseries",
+      "title": "Top Queries by Buffer Misses",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(pg_top_query_resources_total{node=~\"$node\",kind=\"shared_blks_read\"}[5m]) * 8192)",
+          "legendFormat": "qid={{queryid}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Reads past shared_buffers — possibly OS cache, NOT necessarily disk (physics — Top Queries by Disk Reads). Fix: indexes/RAM."
+    },
+    {
+      "id": 510,
+      "type": "timeseries",
+      "title": "Top Queries by Temp",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(pg_top_temp_query_blks_total{node=~\"$node\"}[5m]) * 8192)",
+          "legendFormat": "qid={{queryid}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Who spills to disk. Fix: work_mem (careful: × connections), fix the plan (sorts/hashes)."
+    },
+    {
+      "id": 511,
+      "type": "timeseries",
+      "title": "Top Queries by WAL",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(pg_top_wal_query_bytes_total{node=~\"$node\"}[5m]))",
+          "legendFormat": "qid={{queryid}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Who generates WAL — the culprit of checkpoint storms and replication lag. Fix: batch UPDATEs, drop redundant indexes (each one = WAL)."
+    },
+    {
+      "id": 512,
+      "type": "timeseries",
+      "title": "Top Queries by Rows",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(pg_top_query_resources_total{node=~\"$node\",kind=\"rows\"}[5m]))",
+          "legendFormat": "qid={{queryid}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Watch: rows/s as a proxy for over-fetch and network traffic; weight = rows per call. Fix: LIMIT/pagination, drop unneeded columns/rows client-side."
+    },
+    {
+      "id": 516,
+      "type": "timeseries",
+      "title": "Top Queries by Wait Time",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (queryid) (rate(pg_wait_query_profile_total{node=~\"$node\"}[5m])) / 100)",
+          "legendFormat": "qid={{queryid}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "description": "Ranks by total active time (CPU + waits), sees queries in flight. Fix: queryid → Query Text Lookup below."
+    },
+    {
+      "id": 517,
+      "type": "timeseries",
+      "title": "Mean Latency Spread Across Queries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "scaleDistribution": {
+              "type": "log",
+              "log": 10
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "quantile(0.50, 1000 * rate(pg_query_exec_seconds_total{node=~\"$node\"}[5m]) / (rate(pg_query_calls_total{node=~\"$node\"}[5m]) > 0))",
+          "legendFormat": "p50",
+          "refId": "P50"
+        },
+        {
+          "expr": "quantile(0.75, 1000 * rate(pg_query_exec_seconds_total{node=~\"$node\"}[5m]) / (rate(pg_query_calls_total{node=~\"$node\"}[5m]) > 0))",
+          "legendFormat": "p75",
+          "refId": "P75"
+        },
+        {
+          "expr": "quantile(0.90, 1000 * rate(pg_query_exec_seconds_total{node=~\"$node\"}[5m]) / (rate(pg_query_calls_total{node=~\"$node\"}[5m]) > 0))",
+          "legendFormat": "p90",
+          "refId": "P90"
+        },
+        {
+          "expr": "quantile(0.95, 1000 * rate(pg_query_exec_seconds_total{node=~\"$node\"}[5m]) / (rate(pg_query_calls_total{node=~\"$node\"}[5m]) > 0))",
+          "legendFormat": "p95",
+          "refId": "P95"
+        },
+        {
+          "expr": "quantile(0.99, 1000 * rate(pg_query_exec_seconds_total{node=~\"$node\"}[5m]) / (rate(pg_query_calls_total{node=~\"$node\"}[5m]) > 0))",
+          "legendFormat": "p99",
+          "refId": "P99"
+        }
+      ],
+      "description": "Quantiles over PER-QUERY MEANS, not over executions: pg_stat_statements stores aggregates, not histograms, so a single slow execution is invisible here. Every queryid weighs the SAME regardless of call rate — a once-an-hour report moves p99 as much as a hot OLTP query does. Watch: a widening p99/p50 gap = the query mix became heterogeneous, not that users got slower. Fix: rank by actual time in Top Queries by Time; for true per-execution percentiles you need pg_stat_monitor (higher overhead than pgss)."
+    },
+    {
+      "id": 520,
+      "type": "timeseries",
+      "title": "Top Queries by CPU",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (queryid) (rate(pg_kcache_query_cpu_seconds_total{node=~\"$node\"}[5m])))",
+          "legendFormat": "qid={{queryid}}",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(pg_kcache_cpu_seconds_total{node=~\"$node\"}[5m]))",
+          "legendFormat": "вся БД (сверить с CPU хоста, слой 1)",
+          "refId": "B"
+        }
+      ],
+      "description": "Real CPU (pg_stat_kcache); the whole-DB line — compare with host CPU Usage: whose CPU is it. Fix: the culprit's plan/JIT/functions."
+    },
+    {
+      "id": 521,
+      "type": "timeseries",
+      "title": "Latency Variability (stddev/mean)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, pg_top_query_time_ms{node=~\"$node\",stat=\"stddev\"} / ignoring(stat) clamp_min(pg_top_query_time_ms{node=~\"$node\",stat=\"mean\"}, 0.001))",
+          "legendFormat": "{{datname}} qid={{queryid}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Coefficient of variation per query since the last pgss reset — a HEURISTIC variability detector, NOT proof of a plan change. High CV equally fits: skewed parameter values, cold vs warm cache, lock waits, concurrency spikes — or a genuinely flipped plan. It is a lifetime figure (weekly pgss reset keeps it from freezing). Watch: a jump at an unchanged call rate is worth a look. Fix: confirm with the actual plans before concluding anything — auto_explain log, grep qid=<queryid>; if plans differ, check ANALYZE freshness (Last Vacuum / Analyze)."
+    },
+    {
+      "id": 522,
+      "type": "timeseries",
+      "title": "Top Queries by Disk Reads",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 45
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "links": [
+            {
+              "title": "Show query text",
+              "targetBlank": false,
+              "url": "/d/pg-queries?var-node=${node}&var-queryid=${__field.labels.queryid}&${__url_time_range}"
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (queryid) (rate(pg_kcache_query_io_bytes_total{node=~\"$node\",op=\"reads\"}[5m])))",
+          "legendFormat": "read qid={{queryid}}",
+          "refId": "A"
+        }
+      ],
+      "description": "True physical disk (getrusage), OS cache not counted — unlike Top Queries by Buffer Misses. Fix: indexes, RAM, a faster volume."
+    },
+    {
+      "id": 514,
+      "type": "table",
+      "title": "Query Text Lookup",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "query"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 900
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "pg_query_info{node=~\"$node\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "target": true
+            },
+            "indexByName": {
+              "queryid": 0,
+              "datname": 1,
+              "query": 2
+            }
+          }
+        }
+      ],
+      "description": "Texts for top-10 by time/WAL/temp. For queryids from other tops — SQL straight into pgss (SELECT query FROM pg_stat_statements WHERE queryid = ...)."
+    }
+  ]
+}

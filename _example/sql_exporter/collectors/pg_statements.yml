@@ -199,13 +199,15 @@ metrics:
     values: [rows, shared_blks_read, temp_blks_written, wal_bytes]
     query_ref: q_top_by_time
 
-  # детектор plan flip (fixes.txt CRITICAL "захват планов"): рост stddev/max
-  # при том же rate = бимодальная латентность = вероятно, сменился план.
+  # эвристика нестабильности латентности (fixes.txt CRITICAL "захват планов"):
+  # рост stddev/max при том же rate = бимодальная латентность. Причин минимум
+  # четыре — параметры запроса, состояние кэша, ожидания локов, конкуренция —
+  # и лишь одна из них смена плана; доказательство только в плане auto_explain.
   # mean — взвешенное по calls; stddev через MAX — упрощение, для
   # относительного детектора (отношение stddev/mean) этого достаточно
   - metric_name: pg_top_query_time_ms
     type: gauge
-    help: "mean/stddev/max exec time per query since reset, top-100 by total time (plan-flip detector)"
+    help: "mean/stddev/max exec time per query since reset, top-100 by total time; stddev/mean = variability heuristic (NOT proof of a plan change)"
     key_labels: [queryid, datname]
     value_label: stat
     values: [mean, stddev, max]

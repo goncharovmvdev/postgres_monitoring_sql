@@ -2,21 +2,17 @@
 # wal_receiver_status и standby_conflicts из репозитория
 collector_name: pg_standby
 
-# «жив ли standby и догоняет ли» — режим, поток walreceiver, отставание в байтах
-# и секундах одним чтением. Отдельно оставлены: pg_standby_up (изолированный
-# пробник живости — не расширять) и conflicts (другой вопрос: «мешает ли replay
-# запросам» — жертвы среди читателей, а не здоровье репликации)
+# «догоняет ли standby» — поток walreceiver и отставание одним чтением.
+# ВАЖНО: коллектор вешается на ВСЕ ноды, а не только на ту, что сегодня standby —
+# иначе после failover новая реплика останется без метрик. Запросы recovery-safe:
+# на primary walreceiver'а нет (0), lsn-функции возвращают NULL -> COALESCE 0.
+# Панели фильтруют роль в PromQL: and on(node) (pg_in_recovery == 1).
+# Роль отдаёт pg_in_recovery (pg_instance.yml) — здесь её дубля нет.
+# conflicts оставлен отдельно: другой вопрос — «мешает ли replay запросам»
 queries:
-  # изолированный пробник живости standby — не расширять
-  - query_name: q_standby_up
-    query: |
-      SELECT
-        1::float8 AS up
-
   - query_name: q_standby_state
     query: |
       SELECT
-        pg_is_in_recovery()::int::float8 AS in_recovery,
         (
           SELECT
             COUNT(*)
@@ -36,18 +32,6 @@ queries:
       FROM pg_stat_database_conflicts
 
 metrics:
-  - metric_name: pg_standby_up
-    type: gauge
-    help: "Exporter can reach the standby"
-    values: [up]
-    query_ref: q_standby_up
-
-  - metric_name: pg_standby_is_in_recovery
-    type: gauge
-    help: "1 = standby mode; drop to 0 = promotion happened"
-    values: [in_recovery]
-    query_ref: q_standby_state
-
   # закрывает слепую зону из gap-анализа: мёртвый walreceiver при догнанном replay
   # выглядит в standby_lag.sql как нулевой лаг; здесь он честный 0
   - metric_name: pg_standby_wal_receiver_up

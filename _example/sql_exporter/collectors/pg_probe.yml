@@ -1,0 +1,22 @@
+# liveness пер-базового DSN для НЕинстансовых job'ов (pgNN-appdb): у них нет
+# pg_instance (дубль кластерных метрик со вторым job-лейблом удвоил бы серии),
+# а без пробы обрыв exporter -> appdb (снятая база, отозванный грант, протухший
+# пароль) виден только как молчаливое исчезновение объектных метрик.
+# Имя НЕ pg_up: два одноимённых семейства с разными лейблами в одном scrape
+# рискуют конфликтом при слиянии gatherer'ов
+collector_name: pg_probe
+
+queries:
+  - query_name: q_probe
+    query: |
+      SELECT
+        current_database() AS datname,
+        1::float8          AS up
+
+metrics:
+  - metric_name: pg_database_up
+    type: gauge
+    help: "Whether the exporter can reach this per-database target (object-collector DSN); pair of pg_up for pgNN-appdb jobs"
+    key_labels: [datname]
+    values: [up]
+    query_ref: q_probe

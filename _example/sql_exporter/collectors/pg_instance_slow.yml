@@ -29,6 +29,29 @@ queries:
           FROM pg_stat_archiver
         )::float8 AS last_age
 
+  # «конфиг тихо не применился» (security/hba_file_errors.sql,
+  # system/config_file_errors.sql): битая строка pg_hba/postgresql.conf НЕ
+  # роняет сервер — он молча продолжает жить со СТАРЫМИ правилами до рестарта,
+  # который уже не поднимется. pending_restart — другой сигнал (валидно, но ждёт
+  # рестарта), поэтому 'setting could not be applied' здесь исключён.
+  # Обе вью читаются ролью monitoring через pg_monitor -> pg_read_all_settings
+  - query_name: q_config_file_errors
+    query: |
+      SELECT
+        (
+          SELECT
+            COUNT(*)
+          FROM pg_hba_file_rules
+          WHERE error IS NOT NULL
+        )::float8 AS hba,
+        (
+          SELECT
+            COUNT(*)
+          FROM pg_file_settings
+          WHERE error IS NOT NULL
+            AND error <> 'setting could not be applied'
+        )::float8 AS config
+
 metrics:
   - metric_name: pg_wal_directory_size_bytes
     type: gauge
@@ -48,3 +71,12 @@ metrics:
     help: "Seconds since last successful WAL archive; -1 = never"
     values: [last_age]
     query_ref: q_archiver_queue
+
+  # >0 = правка конфига ТИХО не применилась; строки с ошибками — в самих вью
+  # (security/hba_file_errors.sql, system/config_file_errors.sql)
+  - metric_name: pg_config_file_errors
+    type: gauge
+    help: "Broken lines in pg_hba.conf / postgresql.conf (kind=hba|config); server silently keeps OLD values, next restart will FAIL; restart-pending excluded (see pg_settings_pending_restart)"
+    value_label: kind
+    values: [hba, config]
+    query_ref: q_config_file_errors

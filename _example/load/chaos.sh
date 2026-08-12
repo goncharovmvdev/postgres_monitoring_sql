@@ -2,7 +2,7 @@
 # Управляемый «хаос» (~11 минут): вся логика фаз — в pgbench-скриптах load/chaos/*.sql,
 # здесь только последовательный запуск. Запуск:
 #   docker compose run --rm --no-deps --entrypoint sh load /load/chaos.sh
-H="-h postgres -U postgres -d postgres"
+H="-h postgres -U postgres -d appdb"
 export PGPASSWORD=postgres
 
 echo "=== фаза 1 (2 мин): блокировки на горячей строке"

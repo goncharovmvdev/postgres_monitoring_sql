@@ -1,12 +1,13 @@
 # слой "postgres: базы и объекты", state-часть (60s): дешёвые вью, но
 # сортировка per-table метрик по pg_total_relation_size — не для 15s.
 # Размеры/индексная гигиена/sequences — в pg_objects_slow.yml (300s),
-# bloat — в pg_bloat.yml (1h). per-table ограничено top-20 по размеру:
-# в проде это защита от взрыва кардинальности.
+# bloat — в pg_bloat.yml (1h). per-table ограничено объединением top-10 по
+# четырём осям (<= 40 таблиц) — защита от взрыва кардинальности в проде.
 # У per-table метрик ОБЯЗАТЕЛЬНЫ datname+schemaname: без схемы одинаковый
 # relname в двух схемах даёт дубль лейблов — клиент отвергает всю метрику.
 # ВНИМАНИЕ: pg_stat_user_tables видит только ПОДКЛЮЧЁННУЮ базу (datname);
-# для мультибазового кластера — по target'у на базу в sql_exporter.yml
+# поэтому объектные коллекторы идут отдельными job'ами по базе (pgNN-appdb
+# в sql_exporter.yml, DSN в прикладную appdb) — по target'у на каждую базу
 collector_name: pg_objects
 min_interval: 60s
 
@@ -21,13 +22,24 @@ queries:
         mxid_age(datminmxid)::float8 AS mxid_age
       FROM pg_database
 
-  # «что происходит с крупнейшими таблицами» — паспорт top-20: доступ,
-  # live/dead и давность обслуживания из ОДНОЙ сортировки по размеру.
-  # Бонусы: pg_total_relation_size (дорогой обход файлов на каждую таблицу)
-  # выполняется один раз вместо трёх, и состав top-20 у трёх метрик
-  # гарантированно единый (три независимые сортировки могли разъехаться)
+  # ТОП ПО НЕСКОЛЬКИМ ОСЯМ, а не только по размеру: маленькая, но горячая или
+  # распухшая таблица в top-по-размеру не попадает и остаётся невидимой.
+  # Берём объединение четырёх top-10: размер, мёртвые строки, запись
+  # (ins+upd+del) и объём seq-чтения. Уникальных таблиц <= 40 (обычно меньше:
+  # списки пересекаются) — это и потолок кардинальности per-table метрик.
+  # Один pg_total_relation_size на выборку вместо трёх сортировок, состав
+  # top-набора у всех трёх метрик гарантированно единый
   - query_name: q_top_tables
     query: |
+      WITH ranked AS (
+        (SELECT relid FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC NULLS LAST LIMIT 10)
+        UNION
+        (SELECT relid FROM pg_stat_user_tables ORDER BY n_dead_tup DESC NULLS LAST LIMIT 10)
+        UNION
+        (SELECT relid FROM pg_stat_user_tables ORDER BY (n_tup_ins + n_tup_upd + n_tup_del) DESC NULLS LAST LIMIT 10)
+        UNION
+        (SELECT relid FROM pg_stat_user_tables ORDER BY seq_tup_read DESC NULLS LAST LIMIT 10)
+      )
       SELECT
         current_database()              AS datname,
         s.schemaname,
@@ -44,18 +56,46 @@ queries:
         COALESCE(EXTRACT(EPOCH FROM (now() - GREATEST(s.last_vacuum, s.last_autovacuum))), -1)::float8   AS vacuum,
         COALESCE(EXTRACT(EPOCH FROM (now() - GREATEST(s.last_analyze, s.last_autoanalyze))), -1)::float8 AS analyze
       FROM pg_stat_user_tables s
-      ORDER BY pg_total_relation_size(s.relid) DESC
-      LIMIT 20
+      JOIN ranked r ON r.relid = s.relid
 
-  # «сколько таблиц ждут автовакуума» — глобальные пороги (vacuum/tables_need_vacuum.sql)
+  # ДОЛГ ВАКУУМА с учётом per-table reloptions и insert-триггера: глобальные
+  # autovacuum_vacuum_* — лишь дефолт, таблица может переопределить их через
+  # ALTER TABLE ... SET (autovacuum_*), а с PG13 вакуум запускается ещё и по
+  # НАКОПЛЕННЫМ ВСТАВКАМ (n_ins_since_vacuum) — append-only таблицы старая
+  # формула не видела вовсе. Разбивка по reason: dead / inserts — ждут вакуума,
+  # disabled — autovacuum_enabled=false, их не вакуумит НИКТО (тихий долг).
+  # ithr < 0 = insert-триггер выключен (autovacuum_vacuum_insert_threshold=-1)
   - query_name: q_tables_need_vacuum
     query: |
       SELECT
-        COUNT(*)::float8 AS cnt
+        current_database() AS datname,
+        COUNT(*) FILTER (
+          WHERE o.av_on AND s.n_dead_tup > o.thr + o.sf * GREATEST(c.reltuples, 0)
+        )::float8 AS dead,
+        COUNT(*) FILTER (
+          WHERE o.av_on AND o.ithr >= 0
+            AND s.n_ins_since_vacuum > o.ithr + o.isf * GREATEST(c.reltuples, 0)
+        )::float8 AS inserts,
+        COUNT(*) FILTER (WHERE NOT o.av_on)::float8 AS disabled
       FROM pg_stat_user_tables s
       JOIN pg_class c ON c.oid = s.relid
-      WHERE s.n_dead_tup > current_setting('autovacuum_vacuum_threshold')::float8
-            + current_setting('autovacuum_vacuum_scale_factor')::float8 * GREATEST(c.reltuples, 0)
+      CROSS JOIN LATERAL (
+        SELECT
+          COALESCE((SELECT option_value FROM pg_options_to_table(c.reloptions)
+                    WHERE option_name = 'autovacuum_vacuum_threshold')::numeric,
+                   current_setting('autovacuum_vacuum_threshold')::numeric) AS thr,
+          COALESCE((SELECT option_value FROM pg_options_to_table(c.reloptions)
+                    WHERE option_name = 'autovacuum_vacuum_scale_factor')::numeric,
+                   current_setting('autovacuum_vacuum_scale_factor')::numeric) AS sf,
+          COALESCE((SELECT option_value FROM pg_options_to_table(c.reloptions)
+                    WHERE option_name = 'autovacuum_vacuum_insert_threshold')::numeric,
+                   current_setting('autovacuum_vacuum_insert_threshold')::numeric) AS ithr,
+          COALESCE((SELECT option_value FROM pg_options_to_table(c.reloptions)
+                    WHERE option_name = 'autovacuum_vacuum_insert_scale_factor')::numeric,
+                   current_setting('autovacuum_vacuum_insert_scale_factor')::numeric) AS isf,
+          COALESCE((SELECT option_value FROM pg_options_to_table(c.reloptions)
+                    WHERE option_name = 'autovacuum_enabled'), 'true')::boolean AS av_on
+      ) o
 
   # вью КЛАСТЕРНАЯ (строки вакуумов всех баз), а relid резолвится только в
   # локальном каталоге — чужие базы помечаются '(remote-db)' вместо ложного
@@ -127,8 +167,10 @@ metrics:
   # --- сколько таблиц ждут автовакуума (vacuum/tables_need_vacuum.sql, глобальные пороги) ---
   - metric_name: pg_tables_need_vacuum
     type: gauge
-    help: "Tables past the autovacuum dead-tuple threshold (vacuum/tables_need_vacuum.sql)"
-    values: [cnt]
+    help: "Tables awaiting autovacuum by reason: dead tuples / accumulated inserts (PG13+) / autovacuum disabled; per-table reloptions honoured"
+    key_labels: [datname]
+    value_label: reason
+    values: [dead, inserts, disabled]
     query_ref: q_tables_need_vacuum
 
   # --- прогресс работающих vacuum (vacuum/vacuum_progress.sql, fixes.txt MEDIUM):

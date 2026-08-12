@@ -1,19 +1,23 @@
 services:
-  # ---------- мониторируемая база + нагрузка ----------
   postgres:
     restart: unless-stopped
-    build: ./postgres
-    image: example-postgres:17
-    # вся конфигурация — в статичном postgres/postgresql.conf (там же ссылка на pg_hba);
-    # sync-репликация — в init/05_sync_replication.sql (ALTER SYSTEM), см. комментарии в файлах
-    command:
+    image: postgres:17
+    entrypoint:
+      - sh
       - -c
-      - config_file=/etc/postgresql/postgresql.conf
+      - |
+        if ! dpkg -s postgresql-17-pg-wait-sampling >/dev/null 2>&1; then
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends \
+                postgresql-17-pg-wait-sampling \
+                postgresql-17-pg-stat-kcache \
+                postgresql-17-cron
+        fi
+        exec docker-entrypoint.sh postgres -c config_file=/etc/postgresql/postgresql.conf
     environment:
-      # отдельной базы нет: нагрузка и мониторинг живут в дефолтной postgres
+      # приложение живёт в appdb (init/03_appdb.sql)
       POSTGRES_PASSWORD: postgres
-      # контроль повреждений страниц: без этого pg_checksum_failures_total
-      # декоративен; overhead — единицы % CPU на пути записи
+      # контроль повреждений страниц, overhead — единицы % CPU на пути записи
       POSTGRES_INITDB_ARGS: "--data-checksums"
     volumes:
       - ./init:/docker-entrypoint-initdb.d:ro
@@ -23,18 +27,23 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 2s
       timeout: 2s
-      retries: 30
+      retries: 60   # первый старт = apt-get расширений + initdb + init-скрипты
 
-  # синхронная физическая реплика (standby): базовый бэкап при первом старте
+  # синхронная физическая реплика (standby): базовый бэкап при первом старте.
+  # Стартует root'ом ради того же apt-get (см. postgres выше); entrypoint сам
+  # понижается до postgres через gosu после установки пакетов
   replica:
     restart: unless-stopped
-    image: example-postgres:17   # собирается сервисом postgres
-    user: postgres
+    image: postgres:17
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./replica/entrypoint.sh:/replica_entrypoint.sh:ro
+      # тот же конфиг и hba, что у primary — реплика запускается с
+      # -c config_file=... (см. entrypoint.sh), дрейф настроек исключён
+      - ./postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     entrypoint: ["sh", "/replica_entrypoint.sh"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -47,6 +56,9 @@ services:
   load:
     restart: unless-stopped
     image: postgres:17
+    # клиентскому pgbench root не нужен вовсе (в отличие от сервера, где root
+    # берёт только bootstrap: apt-get + chown initdb, дальше gosu postgres)
+    user: postgres
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,12 +72,13 @@ services:
       - sh
       - -c
       - |
-        until pg_isready -h postgres -U postgres -d postgres >/dev/null 2>&1; do sleep 1; done
+        until pg_isready -h postgres -U postgres -d appdb >/dev/null 2>&1; do sleep 1; done
         while true; do
-            pgbench -h postgres -U postgres -f /load/load.sql -c 2 -j 1 -T 55 -R 50 postgres
+            pgbench -h postgres -U postgres -f /load/load.sql -c 2 -j 1 -T 55 -R 50 appdb
             sleep 5
         done
 
+  # ИСПОЛЬЗОВАТЬ CronJob k8s
   # Регламентный сброс кумулятивной статистики (fixes.txt HIGH "ИСПРАВИТЬ top-N"):
   # primary — через pg_cron (init/07_maintenance_cron.sql); реплика — контейнером
   # ниже, потому что pg_cron на hot standby джобы не выполняет, а pgss/kcache/
@@ -73,6 +86,7 @@ services:
   replica-maintenance:
     restart: unless-stopped
     image: postgres:17
+    user: postgres   # только psql-клиент — root не нужен
     depends_on:
       replica:
         condition: service_healthy

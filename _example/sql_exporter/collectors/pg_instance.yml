@@ -13,6 +13,24 @@ queries:
           )
         )::float8 AS uptime_seconds
 
+  # ИДЕНТИЧНОСТЬ И РОЛЬ. Роль — это СОСТОЯНИЕ, а не лейбл: если положить
+  # primary/standby в лейбл, failover переименует серии и разорвёт историю.
+  # Поэтому роль отдаётся метрикой и выбирается в PromQL:
+  #   <метрика> and on(node) (pg_in_recovery == 0)   -- то, что на primary
+  # system_identifier одинаков у всех нод ОДНОГО кластера (доказывает членство
+  # и ловит подключение к чужому кластеру после переезда DSN);
+  # timeline_id инкрементится при promote — маркер состоявшегося failover.
+  # pg_control_* доступны роли monitoring через pg_monitor (проверено на PG17)
+  - query_name: q_identity
+    query: |
+      SELECT
+        pg_is_in_recovery()::int::float8 AS in_recovery,
+        CASE WHEN pg_is_in_recovery() THEN 'standby' ELSE 'primary' END AS role,
+        (SELECT system_identifier::text FROM pg_control_system())      AS system_identifier,
+        COALESCE(NULLIF(current_setting('cluster_name'), ''), '(unset)') AS cluster_name,
+        (SELECT timeline_id::float8 FROM pg_control_checkpoint())      AS timeline_id,
+        1::float8 AS info
+
   - query_name: q_activity_by_state
     query: |
       SELECT
@@ -56,7 +74,9 @@ queries:
             COUNT(*)
           FROM pg_settings
           WHERE pending_restart
-        )::float8                                         AS pending_restart
+        )::float8                                         AS pending_restart,
+        (current_setting('data_checksums') = 'on')::int::float8 AS data_checksums,
+        pg_size_bytes(current_setting('max_wal_size'))::float8  AS max_wal_size_bytes
 
   - query_name: q_stat_database
     query: |
@@ -267,6 +287,32 @@ metrics:
     help: "Seconds since postmaster start (system/version_uptime.sql); drop = restart/crash/failover"
     values: [uptime_seconds]
     query_ref: q_up_uptime
+
+  - metric_name: pg_in_recovery
+    type: gauge
+    help: "0 = primary, 1 = standby; role as STATE, never as a label (failover must not rename series)"
+    values: [in_recovery]
+    query_ref: q_identity
+
+  - metric_name: pg_role_info
+    type: gauge
+    help: "Current role as an info metric: value 1, label role=primary|standby; use with group_left/and on(node)"
+    key_labels: [role]
+    values: [info]
+    query_ref: q_identity
+
+  - metric_name: pg_cluster_info
+    type: gauge
+    help: "Cluster identity from PG itself: system_identifier is equal across nodes of one cluster; value always 1"
+    key_labels: [system_identifier, cluster_name]
+    values: [info]
+    query_ref: q_identity
+
+  - metric_name: pg_timeline_id
+    type: gauge
+    help: "Current timeline; increments on promote - a marker of a failover that actually happened"
+    values: [timeline_id]
+    query_ref: q_identity
 
   - metric_name: pg_stat_activity_count
     type: gauge
@@ -496,7 +542,7 @@ metrics:
 
   - metric_name: pg_long_running_transactions
     type: gauge
-    help: "Client transactions open longer than 5 minutes (activity/long_running_queries.sql)"
+    help: "Client transactions open longer than 10 seconds (activity/long_running_queries.sql)"
     values: [long_running]
     query_ref: q_activity_scalars
 
@@ -548,8 +594,24 @@ metrics:
     values: [count, oldest_seconds]
     query_ref: q_prepared_xacts
 
+  # без этой метрики нулевой pg_checksum_failures_total неотличим от
+  # «контроль повреждений вообще выключен» — зелёный ноль ни о чём
+  - metric_name: pg_settings_data_checksums
+    type: gauge
+    help: "1 = data checksums enabled; with 0 the checksum failure counter is meaningless (nothing is being checked)"
+    values: [data_checksums]
+    query_ref: q_settings
+
   - metric_name: pg_settings_pending_restart
     type: gauge
     help: "Settings changed but waiting for restart (system/pending_restart.sql)"
     values: [pending_restart]
+    query_ref: q_settings
+
+  # референс-линия для панели WAL Directory Size: pg_wal стабильно выше этого
+  # значения = WAL держит слот/архиватор, чекпоинты его освободить не могут
+  - metric_name: pg_settings_max_wal_size_bytes
+    type: gauge
+    help: "max_wal_size in bytes; reference for pg_wal_directory_size_bytes — sustained excess = a slot/archiver is holding WAL"
+    values: [max_wal_size_bytes]
     query_ref: q_settings

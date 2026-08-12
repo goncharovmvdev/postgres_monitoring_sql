@@ -1,0 +1,923 @@
+{
+  "uid": "pg-hygiene",
+  "title": "PostgreSQL: Hygiene & Debt",
+  "schemaVersion": 39,
+  "refresh": "5m",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "Failover",
+        "enable": true,
+        "iconColor": "red",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "changes(pg_timeline_id[2m]) > 0",
+        "step": "60s",
+        "target": {
+          "expr": "changes(pg_timeline_id[2m]) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "Promote / failover",
+        "textFormat": "{{node}}: timeline changed (promote)"
+      },
+      {
+        "name": "PostgreSQL restart",
+        "enable": true,
+        "iconColor": "orange",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "resets(pg_postmaster_uptime_seconds{node=~\"$node\"}[5m]) > 0",
+        "step": "60s",
+        "target": {
+          "expr": "resets(pg_postmaster_uptime_seconds{node=~\"$node\"}[5m]) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "PostgreSQL restart",
+        "textFormat": "{{node}}"
+      },
+      {
+        "name": "Stats reset",
+        "enable": true,
+        "iconColor": "blue",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "resets(pg_statements_calls_total{node=~\"$node\"}[10m]) > 0",
+        "step": "60s",
+        "target": {
+          "expr": "resets(pg_statements_calls_total{node=~\"$node\"}[10m]) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "pg_stat_statements reset",
+        "textFormat": "{{node}} — counters restarted from zero"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "node",
+        "label": "Нода",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(pg_up, node)",
+          "refId": "var"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "pg01",
+          "value": "pg01"
+        },
+        "description": "Идентичность НОДЫ, не роль: после failover нода остаётся собой. Роль показывают панели Node Roles / pg_role_info."
+      },
+      {
+        "name": "host",
+        "label": "Хост",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(pg_up{node=~\"$node\"}, host)",
+          "refId": "var"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "demo-host",
+          "value": "demo-host"
+        }
+      },
+      {
+        "name": "datname",
+        "label": "База",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(pg_table_tuples{node=~\"$node\"}, datname)",
+          "refId": "var"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "current": {
+          "text": "All",
+          "value": "$__all",
+          "selected": true
+        },
+        "description": "База для панелей объектного слоя (per-database метрики). Cluster-wide панели (Database Size, Transaction ID Age) фильтром не управляются."
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "← Overview",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/pg-overview",
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false,
+      "targetBlank": false,
+      "tags": []
+    },
+    {
+      "title": "Layers (incident)",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/pg-layered",
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false,
+      "targetBlank": false,
+      "tags": []
+    }
+  ],
+  "panels": [
+    {
+      "id": 800,
+      "type": "row",
+      "title": "Objects: Debt",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 401,
+      "type": "timeseries",
+      "title": "Database Size",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_db_size_bytes{node=~\"$node\"}",
+          "legendFormat": "{{datname}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Watch: trend breaks. Fix: the 'running out of space' route: WAL → temp → bloat."
+    },
+    {
+      "id": 403,
+      "type": "timeseries",
+      "title": "Dead Tuples",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_table_tuples{node=~\"$node\",datname=~\"$datname\",kind=\"dead\"}",
+          "legendFormat": "{{schemaname}}.{{relname}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Watch: growth while autovacuum runs = something holds it back. Fix: Xmin Horizon, workers. Table set = union of top-10 by size, dead tuples, write volume and seq-read volume, so a small but hot or bloated table is not hidden by the big ones."
+    },
+    {
+      "id": 405,
+      "type": "bargauge",
+      "title": "Table Size (top 20)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_table_size_bytes{node=~\"$node\",datname=~\"$datname\",part=\"total\"}",
+          "legendFormat": "{{schemaname}}.{{relname}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "description": "Watch: a sharp break = bloat after mass UPDATE/DELETE. Fix: pg_repack.",
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 406,
+      "type": "timeseries",
+      "title": "Seq vs Index Scans",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "rate(pg_table_activity_total{node=~\"$node\",datname=~\"$datname\",op=\"seq_scan\"}[5m])",
+          "legendFormat": "seq {{schemaname}}.{{relname}}",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(pg_table_activity_total{node=~\"$node\",datname=~\"$datname\",op=\"idx_scan\"}[5m])",
+          "legendFormat": "idx {{schemaname}}.{{relname}}",
+          "refId": "B"
+        }
+      ],
+      "description": "Watch: seq scans on large tables — index candidates. Fix: add an index; cross-check Top Queries by Buffer Misses. Table set = union of top-10 by size, dead tuples, write volume and seq-read volume, so a small but hot or bloated table is not hidden by the big ones."
+    },
+    {
+      "id": 407,
+      "type": "timeseries",
+      "title": "HOT Update Ratio",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "100 * sum by (schemaname, relname) (rate(pg_table_activity_total{node=~\"$node\",datname=~\"$datname\",op=\"tup_hot_upd\"}[5m])) / clamp_min(sum by (schemaname, relname) (rate(pg_table_activity_total{node=~\"$node\",datname=~\"$datname\",op=\"tup_upd\"}[5m])), 0.001)",
+          "legendFormat": "{{schemaname}}.{{relname}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Watch: < 100% on UPDATE-heavy tables = updates touch indexes. Fix: fillfactor < 100, don't index updated columns. Table set = union of top-10 by size, dead tuples, write volume and seq-read volume, so a small but hot or bloated table is not hidden by the big ones."
+    },
+    {
+      "id": 408,
+      "type": "timeseries",
+      "title": "Last Vacuum / Analyze",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_table_maintenance_age_seconds{node=~\"$node\",datname=~\"$datname\",kind=\"vacuum\"}",
+          "legendFormat": "vacuum {{schemaname}}.{{relname}}",
+          "refId": "A"
+        },
+        {
+          "expr": "pg_table_maintenance_age_seconds{node=~\"$node\",datname=~\"$datname\",kind=\"analyze\"}",
+          "legendFormat": "analyze {{schemaname}}.{{relname}}",
+          "refId": "B"
+        }
+      ],
+      "description": "Watch: -1 = never; a stale ANALYZE = stale planner stats = bad plans. Fix: ANALYZE, per-table autovacuum settings; cross-check Latency Variability. Table set = union of top-10 by size, dead tuples, write volume and seq-read volume, so a small but hot or bloated table is not hidden by the big ones."
+    },
+    {
+      "id": 409,
+      "type": "stat",
+      "title": "Tables Needing Vacuum",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(pg_tables_need_vacuum{node=~\"$node\",datname=~\"$datname\"})",
+          "refId": "A"
+        }
+      ],
+      "description": "Tables past an autovacuum threshold, summed over reasons: dead tuples, accumulated INSERTS (PG13+ insert-triggered vacuum — append-only tables are invisible to the dead-tuple rule) and tables with autovacuum_enabled=false, which nobody vacuums at all. Per-table reloptions override the global settings and are honoured. OK: 0 to a few. Fix: split by reason (pg_tables_need_vacuum{reason=...}) — workers/naptime/cost for dead, insert thresholds for inserts, and a deliberate plan for disabled ones."
+    },
+    {
+      "id": 410,
+      "type": "stat",
+      "title": "Unused Indexes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 4,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(pg_unused_indexes{node=~\"$node\",datname=~\"$datname\",kind=\"count\"})",
+          "refId": "A"
+        }
+      ],
+      "description": "Watch: dead weight — a price paid on every UPDATE. Fix: DROP INDEX CONCURRENTLY after checking usage on replicas."
+    },
+    {
+      "id": 404,
+      "type": "stat",
+      "title": "Invalid Indexes",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 8,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(pg_invalid_indexes{node=~\"$node\",datname=~\"$datname\"})",
+          "refId": "A"
+        }
+      ],
+      "description": "OK: 0 (leftovers of a failed CREATE INDEX CONCURRENTLY). Fix: REINDEX CONCURRENTLY or DROP+CREATE."
+    },
+    {
+      "id": 411,
+      "type": "stat",
+      "title": "Sequence Exhaustion",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(1, pg_sequence_used_pct{node=~\"$node\",datname=~\"$datname\",cycle=\"false\"})",
+          "refId": "A",
+          "legendFormat": "{{schemaname}}.{{seqname}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "options": {
+        "textMode": "value_and_name"
+      },
+      "description": "Share of the sequence range already consumed IN THE DIRECTION OF increment — correct for descending sequences, custom min_value and negative increment (plain last_value/max_value is not). CYCLE sequences are excluded: they wrap instead of running out (their risk is duplicate keys, not exhaustion). OK: < 60%. Fix: migrate the column to bigint, or setval/restart the sequence if the gap is harmless; the label shows which one."
+    },
+    {
+      "id": 413,
+      "type": "bargauge",
+      "title": "Table Bloat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, pg_table_bloat{node=~\"$node\",datname=~\"$datname\",kind=\"wasted_bytes\"})",
+          "legendFormat": "{{schemaname}}.{{relname}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "description": "Hourly estimate; dead tuples != bloat — vacuum frees no space back. Fix: pg_repack/VACUUM FULL; verify with pgstattuple before acting.",
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 414,
+      "type": "bargauge",
+      "title": "Index Bloat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 23
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "topk(10, pg_index_bloat{node=~\"$node\",datname=~\"$datname\",kind=\"wasted_bytes\"})",
+          "legendFormat": "{{schemaname}}.{{indexrelname}}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "description": "Hourly estimate; vacuum does not shrink indexes. Fix: REINDEX CONCURRENTLY.",
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 810,
+      "type": "row",
+      "title": "Configuration Reference",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "panels": []
+    },
+    {
+      "id": 631,
+      "type": "table",
+      "title": "Instance Settings (live — ignores dashboard time range)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "pg-${node}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "name"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 300
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pending"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT name,\n       current_setting(name) AS value,\n       CASE WHEN pending_restart THEN 'ЖДЁТ РЕСТАРТА' ELSE '' END AS pending,\n       CASE WHEN source = 'configuration file' AND sourcefile LIKE '%postgresql.auto.conf'\n            THEN 'ALTER SYSTEM' ELSE source END AS source\nFROM pg_settings\nWHERE name = ANY(ARRAY['max_connections','max_files_per_process','shared_buffers','effective_cache_size','work_mem','maintenance_work_mem','huge_pages','huge_page_size','shared_memory_size_in_huge_pages','max_wal_size','min_wal_size','checkpoint_timeout','checkpoint_completion_target','wal_buffers','wal_compression','synchronous_commit','synchronous_standby_names','autovacuum_max_workers','autovacuum_naptime','autovacuum_vacuum_cost_limit','bgwriter_lru_maxpages','track_io_timing','track_wal_io_timing','shared_preload_libraries'])\nORDER BY array_position(ARRAY['max_connections','max_files_per_process','shared_buffers','effective_cache_size','work_mem','maintenance_work_mem','huge_pages','huge_page_size','shared_memory_size_in_huge_pages','max_wal_size','min_wal_size','checkpoint_timeout','checkpoint_completion_target','wal_buffers','wal_compression','synchronous_commit','synchronous_standby_names','autovacuum_max_workers','autovacuum_naptime','autovacuum_vacuum_cost_limit','bgwriter_lru_maxpages','track_io_timing','track_wal_io_timing','shared_preload_libraries'], name)",
+          "datasource": {
+            "type": "postgres",
+            "uid": "pg-${node}"
+          }
+        }
+      ],
+      "description": "Watch: the pending-restart flag; source = ALTER SYSTEM vs configuration file; on standby — ITS OWN values. Live SQL, the datasource follows the instance selector (uid pg-${node}; on «datasource not found» revert to $pgds). Fix: restart in a window; cross-check hugepages with Hardware & Kernel Settings (OS)."
+    },
+    {
+      "id": 632,
+      "type": "table",
+      "title": "Hardware & Kernel Settings",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 15,
+        "x": 0,
+        "y": 39
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 620
+              },
+              {
+                "id": "displayName",
+                "value": "parameter (recommendation)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last *"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "value"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "count(node_cpu_seconds_total{host=~\"$host\",mode=\"idle\"})",
+          "legendFormat": "CPU cores",
+          "refId": "R",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "round(node_memory_MemTotal_bytes{host=~\"$host\"} / 2^30 * 10) / 10",
+          "legendFormat": "RAM total, GiB",
+          "refId": "S",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "round(node_memory_SwapTotal_bytes{host=~\"$host\"} / 2^30 * 10) / 10",
+          "legendFormat": "swap total, GiB (0 = no swap)",
+          "refId": "T",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_swappiness{host=~\"$host\"}",
+          "legendFormat": "vm.swappiness (rec. 1–10)",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_overcommit_memory{host=~\"$host\"}",
+          "legendFormat": "vm.overcommit_memory (rec. 2; with 0, OOMScoreAdjust=-1000 is a must)",
+          "refId": "B",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_overcommit_ratio{host=~\"$host\"}",
+          "legendFormat": "vm.overcommit_ratio (with overcommit_memory=2: ~90)",
+          "refId": "C",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_dirty_background_bytes{host=~\"$host\"}",
+          "legendFormat": "vm.dirty_background_bytes (rec. ~256MB; 0 = ratio applies)",
+          "refId": "D",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_dirty_bytes{host=~\"$host\"}",
+          "legendFormat": "vm.dirty_bytes (rec. ~1GB; 0 = ratio applies)",
+          "refId": "E",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_dirty_background_ratio{host=~\"$host\"}",
+          "legendFormat": "vm.dirty_background_ratio (if *_bytes=0)",
+          "refId": "F",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_dirty_ratio{host=~\"$host\"}",
+          "legendFormat": "vm.dirty_ratio (if *_bytes=0)",
+          "refId": "G",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_zone_reclaim_mode{host=~\"$host\"}",
+          "legendFormat": "vm.zone_reclaim_mode (rec. 0)",
+          "refId": "H",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_min_free_kbytes{host=~\"$host\"}",
+          "legendFormat": "vm.min_free_kbytes",
+          "refId": "I",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_vm_nr_hugepages{host=~\"$host\"}",
+          "legendFormat": "vm.nr_hugepages (rec. ≥ shared_memory_size_in_huge_pages — see Instance Settings)",
+          "refId": "J",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_memory_HugePages_Total{host=~\"$host\"}",
+          "legendFormat": "HugePages_Total (meminfo, actual)",
+          "refId": "K",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_memory_HugePages_Free{host=~\"$host\"}",
+          "legendFormat": "HugePages_Free (0 with PG running = pages taken by the DB)",
+          "refId": "L",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_kernel_numa_balancing{host=~\"$host\"}",
+          "legendFormat": "kernel.numa_balancing (rec. 0 on multi-socket)",
+          "refId": "M",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_net_core_somaxconn{host=~\"$host\"}",
+          "legendFormat": "net.core.somaxconn (rec. ≥1024)",
+          "refId": "N",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_net_ipv4_tcp_keepalive_time{host=~\"$host\"}",
+          "legendFormat": "net.ipv4.tcp_keepalive_time, s",
+          "refId": "O",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_net_ipv4_tcp_keepalive_intvl{host=~\"$host\"}",
+          "legendFormat": "net.ipv4.tcp_keepalive_intvl, s",
+          "refId": "P",
+          "instant": true,
+          "range": false
+        },
+        {
+          "expr": "node_sysctl_net_ipv4_tcp_keepalive_probes{host=~\"$host\"}",
+          "legendFormat": "net.ipv4.tcp_keepalive_probes",
+          "refId": "Q",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "transformations": [
+        {
+          "id": "reduce",
+          "options": {
+            "reducers": [
+              "lastNotNull"
+            ],
+            "labelsToFields": false
+          }
+        }
+      ],
+      "description": "Watch: values diverging from the recommendation in the row name; a missing row means NOT collected (no include flag or the sysctl is absent in this kernel), not 'all good'. Fix: sysctl -w + /etc/sysctl.conf"
+    },
+    {
+      "id": 633,
+      "type": "text",
+      "title": "Manual Checks (not exported)",
+      "gridPos": {
+        "h": 9,
+        "w": 9,
+        "x": 15,
+        "y": 39
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "| what | recommended |\n|---|---|\n| THP | `/sys/kernel/mm/transparent_hugepage/enabled` → **never** (или madvise) |\n| I/O scheduler | `/sys/block/<dev>/queue/scheduler` → **none** (NVMe) / **mq-deadline** (SSD) |\n| readahead | `/sys/block/<dev>/queue/read_ahead_kb` → 128 OLTP / 2048–4096 аналитика |\n| CPU governor | `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor` → **performance** |\n| clocksource | `.../clocksource0/current_clocksource` → **tsc** |\n| noatime | `mount \\| grep <data-fs>` |\n| Limit*/TasksMax | `/proc/<postmaster>/limits`, `systemctl show postgresql` |\n\nПрод: снимать textfile-коллектором node_exporter (cron пишет `.prom`)."
+      }
+    }
+  ],
+  "description": "Долг и конфигурация: смотреть по расписанию, а не в инцидент."
+}

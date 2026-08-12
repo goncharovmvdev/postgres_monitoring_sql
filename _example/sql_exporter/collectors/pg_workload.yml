@@ -7,9 +7,9 @@ collector_name: pg_workload
 # pg_waiting_sessions не слит с q_activity_scalars: другая форма результата
 # (строки по wait_event_type vs одна строка агрегатов).
 queries:
-  # один скан pg_stat_activity вместо пяти; фильтры каждой метрики — внутри
-  # агрегатов (FILTER), сам скан нарочно БЕЗ WHERE: xmin-горизонт обязан видеть
-  # все процессы (walsender/prepared держат его не хуже клиентских бэкендов)
+  # один скан pg_stat_activity вместо четырёх; фильтры каждой метрики — внутри
+  # агрегатов (FILTER), поэтому WHERE у скана нет. xmin-горизонт живёт отдельно
+  # (q_xmin_horizon): его держат не только бэкенды
   - query_name: q_activity_scalars
     query: |
       SELECT
@@ -19,9 +19,37 @@ queries:
         GREATEST(0, COALESCE(EXTRACT(EPOCH FROM MAX(now() - query_start)
             FILTER (WHERE backend_type = 'client backend' AND state = 'active')), 0))::float8 AS longest_active_seconds,
         GREATEST(0, COALESCE(EXTRACT(EPOCH FROM MAX(now() - state_change)
-            FILTER (WHERE backend_type = 'client backend' AND state LIKE 'idle in transaction%')), 0))::float8 AS longest_idle_in_xact_seconds,
-        COALESCE(MAX(age(backend_xmin)), 0)::float8 AS xmin_horizon_age
+            FILTER (WHERE backend_type = 'client backend' AND state LIKE 'idle in transaction%')), 0))::float8 AS longest_idle_in_xact_seconds
       FROM pg_stat_activity
+
+  # КТО держит горизонт xmin. Раньше метрика смотрела только в pg_stat_activity —
+  # это неполный горизонт: vacuum одинаково сдерживают prepared-транзакции,
+  # слоты репликации (xmin/catalog_xmin) и walsender'ы с hot_standby_feedback.
+  # Источник в лейбле source — иначе видно «горизонт растёт», но не видно кого
+  # чинить. Зеркало activity/xmin_horizon.sql (там же детализация до pid/имени).
+  # Эффективный горизонт = max(pg_xmin_horizon_age) по источникам
+  - query_name: q_xmin_horizon
+    query: |
+      SELECT
+        'session' AS source,
+        COALESCE(MAX(age(COALESCE(backend_xmin, backend_xid))), 0)::float8 AS age
+      FROM pg_stat_activity
+      WHERE backend_type <> 'walsender'
+      UNION ALL
+      SELECT
+        'walsender',
+        COALESCE(MAX(age(backend_xmin)), 0)::float8
+      FROM pg_stat_replication
+      UNION ALL
+      SELECT
+        'prepared_xact',
+        COALESCE(MAX(age(transaction)), 0)::float8
+      FROM pg_prepared_xacts
+      UNION ALL
+      SELECT
+        'replication_slot',
+        COALESCE(MAX(GREATEST(age(xmin), age(catalog_xmin))), 0)::float8
+      FROM pg_replication_slots
 
   # один проход по pg_stat_statements вместо трёх; бонус — числитель и
   # знаменатель панели «Средняя латентность» (exec_seconds / calls) теперь
@@ -106,12 +134,13 @@ metrics:
     values: [longest_idle_in_xact_seconds]
     query_ref: q_activity_scalars
 
-  # чем держится xmin-горизонт: vacuum не может чистить старше этого (activity/idle_in_transaction.sql)
+  # чем держится xmin-горизонт: vacuum не может чистить строки новее этого
   - metric_name: pg_xmin_horizon_age
     type: gauge
-    help: "Age of oldest backend_xmin: how far vacuum is held back"
-    values: [xmin_horizon_age]
-    query_ref: q_activity_scalars
+    help: "Oldest xmin age per holder type (session/walsender/prepared_xact/replication_slot); effective horizon = max across sources"
+    key_labels: [source]
+    values: [age]
+    query_ref: q_xmin_horizon
 
   # --- pg_stat_statements: глобальные счётчики (дешёвые SUM, остаются на 15s:
   #     их едят панели QPS/латентности с окном [1m]) — все из q_statements_totals ---

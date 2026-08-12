@@ -1,8 +1,8 @@
 {
   "uid": "pg-layered",
-  "title": "PostgreSQL: мониторинг по слоям",
+  "title": "PostgreSQL: Layers (incident)",
   "schemaVersion": 39,
-  "refresh": "15s",
+  "refresh": "1m",
   "time": {
     "from": "now-30m",
     "to": "now"
@@ -12,13 +12,14 @@
       "id": 200,
       "type": "row",
       "title": "OS",
+      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 0
       },
-      "collapsed": false
+      "panels": []
     },
     {
       "id": 102,
@@ -43,17 +44,17 @@
       },
       "targets": [
         {
-          "expr": "rate(node_pressure_cpu_waiting_seconds_total{host=~\"$host\"}[1m])",
+          "expr": "rate(node_pressure_cpu_waiting_seconds_total{host=~\"$host\"}[$__rate_interval])",
           "legendFormat": "cpu",
           "refId": "A"
         },
         {
-          "expr": "rate(node_pressure_io_waiting_seconds_total{host=~\"$host\"}[1m])",
+          "expr": "rate(node_pressure_io_waiting_seconds_total{host=~\"$host\"}[$__rate_interval])",
           "legendFormat": "io",
           "refId": "B"
         },
         {
-          "expr": "rate(node_pressure_memory_waiting_seconds_total{host=~\"$host\"}[1m])",
+          "expr": "rate(node_pressure_memory_waiting_seconds_total{host=~\"$host\"}[$__rate_interval])",
           "legendFormat": "memory",
           "refId": "C"
         }
@@ -88,7 +89,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "avg by (mode) (rate(node_cpu_seconds_total{host=~\"$host\",mode!=\"idle\"}[1m])) * 100",
+          "expr": "avg by (mode) (rate(node_cpu_seconds_total{host=~\"$host\",mode!=\"idle\"}[$__rate_interval])) * 100",
           "legendFormat": "{{mode}}",
           "datasource": {
             "type": "prometheus",
@@ -202,7 +203,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 16
       },
@@ -215,7 +216,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "1000 * sum by (device) (rate(node_disk_read_time_seconds_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[1m])) / clamp_min(sum by (device) (rate(node_disk_reads_completed_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[1m])), 0.001)",
+          "expr": "1000 * sum by (device) (rate(node_disk_read_time_seconds_total{host=~\"$host\",device!~\"loop.*|ram.*|sr.*|fd.*\"}[$__rate_interval])) / clamp_min(sum by (device) (rate(node_disk_reads_completed_total{host=~\"$host\",device!~\"loop.*|ram.*|sr.*|fd.*\"}[$__rate_interval])), 0.001)",
           "legendFormat": "{{device}} read",
           "datasource": {
             "type": "prometheus",
@@ -224,7 +225,7 @@
         },
         {
           "refId": "B",
-          "expr": "1000 * sum by (device) (rate(node_disk_write_time_seconds_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[1m])) / clamp_min(sum by (device) (rate(node_disk_writes_completed_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[1m])), 0.001)",
+          "expr": "1000 * sum by (device) (rate(node_disk_write_time_seconds_total{host=~\"$host\",device!~\"loop.*|ram.*|sr.*|fd.*\"}[$__rate_interval])) / clamp_min(sum by (device) (rate(node_disk_writes_completed_total{host=~\"$host\",device!~\"loop.*|ram.*|sr.*|fd.*\"}[$__rate_interval])), 0.001)",
           "legendFormat": "{{device}} write",
           "datasource": {
             "type": "prometheus",
@@ -232,7 +233,7 @@
           }
         }
       ],
-      "description": "Watch: per device, the WAL volume separately. OK: SSD/NVMe single-digit ms, > 10–20 ms is bad. Fix: growth at unchanged IOPS — disk"
+      "description": "Watch: per device, the WAL volume separately. OK: SSD/NVMe single-digit ms, > 10–20 ms is bad. Fix: growth at unchanged IOPS — disk dm-* (LVM) volumes are shown alongside their physical disks — per-device lines, nothing is double-counted."
     },
     {
       "id": 205,
@@ -244,8 +245,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 16
       },
       "fieldConfig": {
@@ -257,7 +258,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (device) (rate(node_disk_reads_completed_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[1m]))",
+          "expr": "sum by (device) (rate(node_disk_reads_completed_total{host=~\"$host\",device!~\"loop.*|ram.*|sr.*|fd.*\"}[$__rate_interval]))",
           "legendFormat": "{{device}} read",
           "datasource": {
             "type": "prometheus",
@@ -266,7 +267,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (device) (rate(node_disk_writes_completed_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[1m]))",
+          "expr": "sum by (device) (rate(node_disk_writes_completed_total{host=~\"$host\",device!~\"loop.*|ram.*|sr.*|fd.*\"}[$__rate_interval]))",
           "legendFormat": "{{device}} write",
           "datasource": {
             "type": "prometheus",
@@ -274,7 +275,42 @@
           }
         }
       ],
-      "description": "Watch: proximity to the volume limit, sawtooth in checkpoint rhythm. OK: < ~70% of the limit. Fix: find the consumer (pg_stat_io, tops), make longer checkpoints, raise volume class/size"
+      "description": "Watch: proximity to the volume limit, sawtooth in checkpoint rhythm. OK: < ~70% of the limit. Fix: find the consumer (pg_stat_io, tops), make longer checkpoints, raise volume class/size dm-* (LVM) volumes are shown alongside their physical disks — per-device lines, nothing is double-counted."
+    },
+    {
+      "id": 210,
+      "type": "timeseries",
+      "title": "Disk Throughput",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (device) (rate(node_disk_read_bytes_total{host=~\"$host\",device!~\"loop.*|ram.*|sr.*|fd.*\"}[$__rate_interval]))",
+          "legendFormat": "{{device}} read",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (device) (rate(node_disk_written_bytes_total{host=~\"$host\",device!~\"loop.*|ram.*|sr.*|fd.*\"}[$__rate_interval]))",
+          "legendFormat": "{{device}} write",
+          "refId": "B"
+        }
+      ],
+      "description": "Volume bandwidth: sequential scans, backups and replication eat MB/s at modest IOPS — this catches what Disk IOPS misses. Compare with pg_stat_io reads/writes ×8192 (Instance: IO Attribution) to see whose bytes these are. OK: below the volume's rated throughput. Fix: find the eater (pg_stat_io → query tops), move backups off-hours, faster volume. dm-* (LVM) volumes are shown alongside their physical disks — per-device lines, nothing is double-counted."
     },
     {
       "id": 204,
@@ -333,7 +369,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (device) (rate(node_disk_io_time_weighted_seconds_total{host=~\"$host\",device!~\"loop.*|dm-.*\"}[1m]))",
+          "expr": "sum by (device) (rate(node_disk_io_time_weighted_seconds_total{host=~\"$host\",device!~\"loop.*|ram.*|sr.*|fd.*\"}[$__rate_interval]))",
           "legendFormat": "{{device}}",
           "datasource": {
             "type": "prometheus",
@@ -341,7 +377,7 @@
           }
         }
       ],
-      "description": "Watch: aqu-sz growth — it leads latency growth. OK: SATA/SAS SSD single digits, NVMe tens. Fix: as Disk Latency — find and spread the load, or a faster disk"
+      "description": "Watch: aqu-sz growth — it leads latency growth. OK: SATA/SAS SSD single digits, NVMe tens. Fix: as Disk Latency — find and spread the load, or a faster disk dm-* (LVM) volumes are shown alongside their physical disks — per-device lines, nothing is double-counted."
     },
     {
       "id": 610,
@@ -366,7 +402,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(node_vmstat_pswpin{host=~\"$host\"}[1m]) * 4096",
+          "expr": "rate(node_vmstat_pswpin{host=~\"$host\"}[$__rate_interval]) * 4096",
           "legendFormat": "swap in",
           "datasource": {
             "type": "prometheus",
@@ -375,7 +411,7 @@
         },
         {
           "refId": "B",
-          "expr": "rate(node_vmstat_pswpout{host=~\"$host\"}[1m]) * 4096",
+          "expr": "rate(node_vmstat_pswpout{host=~\"$host\"}[$__rate_interval]) * 4096",
           "legendFormat": "swap out",
           "datasource": {
             "type": "prometheus",
@@ -501,7 +537,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(node_network_receive_bytes_total{host=~\"$host\",device!=\"lo\"}[1m]))",
+          "expr": "sum(rate(node_network_receive_bytes_total{host=~\"$host\",device!=\"lo\"}[$__rate_interval]))",
           "legendFormat": "rx",
           "datasource": {
             "type": "prometheus",
@@ -510,7 +546,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum(rate(node_network_transmit_bytes_total{host=~\"$host\",device!=\"lo\"}[1m]))",
+          "expr": "sum(rate(node_network_transmit_bytes_total{host=~\"$host\",device!=\"lo\"}[$__rate_interval]))",
           "legendFormat": "tx",
           "datasource": {
             "type": "prometheus",
@@ -542,22 +578,22 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(node_network_receive_errs_total{host=~\"$host\",device!=\"lo\"}[1m]))",
+          "expr": "sum(rate(node_network_receive_errs_total{host=~\"$host\",device!=\"lo\"}[$__rate_interval]))",
           "legendFormat": "rx errs",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(node_network_transmit_errs_total{host=~\"$host\",device!=\"lo\"}[1m]))",
+          "expr": "sum(rate(node_network_transmit_errs_total{host=~\"$host\",device!=\"lo\"}[$__rate_interval]))",
           "legendFormat": "tx errs",
           "refId": "B"
         },
         {
-          "expr": "sum(rate(node_network_receive_drop_total{host=~\"$host\",device!=\"lo\"}[1m]))",
+          "expr": "sum(rate(node_network_receive_drop_total{host=~\"$host\",device!=\"lo\"}[$__rate_interval]))",
           "legendFormat": "rx drop",
           "refId": "C"
         },
         {
-          "expr": "sum(rate(node_network_transmit_drop_total{host=~\"$host\",device!=\"lo\"}[1m]))",
+          "expr": "sum(rate(node_network_transmit_drop_total{host=~\"$host\",device!=\"lo\"}[$__rate_interval]))",
           "legendFormat": "tx drop",
           "refId": "D"
         }
@@ -565,47 +601,49 @@
       "description": "Watch: any sustained non-zero rate. OK: 0. Fix: driver/cable/MTU/ring buffers (ethtool) — infrastructure"
     },
     {
-      "id": 632,
-      "type": "table",
-      "title": "Hardware & Kernel Settings",
+      "id": 300,
+      "type": "row",
+      "title": "Instance: Throughput & IO",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "panels": []
+    },
+    {
+      "id": 304,
+      "type": "timeseries",
+      "title": "Transactions",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 9,
-        "w": 15,
+        "h": 7,
+        "w": 8,
         "x": 0,
-        "y": 38
+        "y": 39
       },
       "fieldConfig": {
-        "defaults": {},
+        "defaults": {
+          "unit": "ops"
+        },
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "Field"
+              "id": "byRegexp",
+              "options": "rollback.*"
             },
             "properties": [
               {
-                "id": "custom.width",
-                "value": 620
-              },
-              {
-                "id": "displayName",
-                "value": "parameter (recommendation)"
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Last *"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "value"
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
               }
             ]
           }
@@ -613,296 +651,17 @@
       },
       "targets": [
         {
-          "expr": "count(node_cpu_seconds_total{host=~\"$host\",mode=\"idle\"})",
-          "legendFormat": "CPU cores",
-          "refId": "R",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "round(node_memory_MemTotal_bytes{host=~\"$host\"} / 2^30 * 10) / 10",
-          "legendFormat": "RAM total, GiB",
-          "refId": "S",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "round(node_memory_SwapTotal_bytes{host=~\"$host\"} / 2^30 * 10) / 10",
-          "legendFormat": "swap total, GiB (0 = no swap)",
-          "refId": "T",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_swappiness{host=~\"$host\"}",
-          "legendFormat": "vm.swappiness (rec. 1–10)",
-          "refId": "A",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_overcommit_memory{host=~\"$host\"}",
-          "legendFormat": "vm.overcommit_memory (rec. 2; with 0, OOMScoreAdjust=-1000 is a must)",
-          "refId": "B",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_overcommit_ratio{host=~\"$host\"}",
-          "legendFormat": "vm.overcommit_ratio (with overcommit_memory=2: ~90)",
-          "refId": "C",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_dirty_background_bytes{host=~\"$host\"}",
-          "legendFormat": "vm.dirty_background_bytes (rec. ~256MB; 0 = ratio applies)",
-          "refId": "D",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_dirty_bytes{host=~\"$host\"}",
-          "legendFormat": "vm.dirty_bytes (rec. ~1GB; 0 = ratio applies)",
-          "refId": "E",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_dirty_background_ratio{host=~\"$host\"}",
-          "legendFormat": "vm.dirty_background_ratio (if *_bytes=0)",
-          "refId": "F",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_dirty_ratio{host=~\"$host\"}",
-          "legendFormat": "vm.dirty_ratio (if *_bytes=0)",
-          "refId": "G",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_zone_reclaim_mode{host=~\"$host\"}",
-          "legendFormat": "vm.zone_reclaim_mode (rec. 0)",
-          "refId": "H",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_min_free_kbytes{host=~\"$host\"}",
-          "legendFormat": "vm.min_free_kbytes",
-          "refId": "I",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_vm_nr_hugepages{host=~\"$host\"}",
-          "legendFormat": "vm.nr_hugepages (rec. ≥ shared_memory_size_in_huge_pages — see Instance Settings)",
-          "refId": "J",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_memory_HugePages_Total{host=~\"$host\"}",
-          "legendFormat": "HugePages_Total (meminfo, actual)",
-          "refId": "K",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_memory_HugePages_Free{host=~\"$host\"}",
-          "legendFormat": "HugePages_Free (0 with PG running = pages taken by the DB)",
-          "refId": "L",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_kernel_numa_balancing{host=~\"$host\"}",
-          "legendFormat": "kernel.numa_balancing (rec. 0 on multi-socket)",
-          "refId": "M",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_net_core_somaxconn{host=~\"$host\"}",
-          "legendFormat": "net.core.somaxconn (rec. ≥1024)",
-          "refId": "N",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_net_ipv4_tcp_keepalive_time{host=~\"$host\"}",
-          "legendFormat": "net.ipv4.tcp_keepalive_time, s",
-          "refId": "O",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_net_ipv4_tcp_keepalive_intvl{host=~\"$host\"}",
-          "legendFormat": "net.ipv4.tcp_keepalive_intvl, s",
-          "refId": "P",
-          "instant": true,
-          "range": false
-        },
-        {
-          "expr": "node_sysctl_net_ipv4_tcp_keepalive_probes{host=~\"$host\"}",
-          "legendFormat": "net.ipv4.tcp_keepalive_probes",
-          "refId": "Q",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "transformations": [
-        {
-          "id": "reduce",
-          "options": {
-            "reducers": [
-              "lastNotNull"
-            ],
-            "labelsToFields": false
-          }
-        }
-      ],
-      "description": "Watch: values diverging from the recommendation in the row name; a missing row means NOT collected (no include flag or the sysctl is absent in this kernel), not 'all good'. Fix: sysctl -w + /etc/sysctl.conf"
-    },
-    {
-      "id": 633,
-      "type": "text",
-      "title": "Manual Checks (not exported)",
-      "gridPos": {
-        "h": 9,
-        "w": 9,
-        "x": 15,
-        "y": 38
-      },
-      "options": {
-        "mode": "markdown",
-        "content": "| what | recommended |\n|---|---|\n| THP | `/sys/kernel/mm/transparent_hugepage/enabled` → **never** (или madvise) |\n| I/O scheduler | `/sys/block/<dev>/queue/scheduler` → **none** (NVMe) / **mq-deadline** (SSD) |\n| readahead | `/sys/block/<dev>/queue/read_ahead_kb` → 128 OLTP / 2048–4096 аналитика |\n| CPU governor | `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor` → **performance** |\n| clocksource | `.../clocksource0/current_clocksource` → **tsc** |\n| noatime | `mount \\| grep <data-fs>` |\n| Limit*/TasksMax | `/proc/<postmaster>/limits`, `systemctl show postgresql` |\n\nПрод: снимать textfile-коллектором node_exporter (cron пишет `.prom`)."
-      }
-    },
-    {
-      "id": 300,
-      "type": "row",
-      "title": "PostgreSQL Instance",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 47
-      },
-      "collapsed": false
-    },
-    {
-      "id": 301,
-      "type": "stat",
-      "title": "PostgreSQL Up",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 0,
-        "y": 48
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "max(pg_up{job=~\"$db\"}) or on() vector(0)",
+          "expr": "sum by (datname) (rate(pg_stat_database_xact_commit{node=~\"$node\"}[$__rate_interval]))",
+          "legendFormat": "commit {{datname}}",
           "refId": "A"
-        }
-      ],
-      "description": "When the DB is down the pg_up series DISAPPEARS. Fix: exporter/network/database — collection health is up{job=~\"sql-.*\"}"
-    },
-    {
-      "id": 614,
-      "type": "stat",
-      "title": "Uptime",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 4,
-        "y": 48
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 600
-              }
-            ]
-          }
         },
-        "overrides": []
-      },
-      "targets": [
         {
-          "expr": "pg_postmaster_uptime_seconds{job=~\"$db\"}",
-          "refId": "A",
-          "legendFormat": ""
+          "expr": "sum by (datname) (rate(pg_stat_database_xact_rollback{node=~\"$node\"}[$__rate_interval]))",
+          "legendFormat": "rollback {{datname}}",
+          "refId": "B"
         }
       ],
-      "description": "Watch: a sharp drop = restart/crash-recovery/failover (red — younger than 10 min). Fix: reason in PG logs; cross-check OOM Kills"
-    },
-    {
-      "id": 319,
-      "type": "stat",
-      "title": "WAL Directory Size",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 8,
-        "y": 48
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "pg_wal_directory_size_bytes{job=~\"$db\"}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: growth beyond max_wal_size. Fix: dead slot (Replication Slots), stuck archiver (WAL Archiver), checkpoints not keeping up"
+      "description": "Watch: a commit dip while waits grow = queued; rollback growth = errors/deadlocks/retries. Fix: DB Load (AAS) → by wait class."
     },
     {
       "id": 302,
@@ -915,8 +674,8 @@
       "gridPos": {
         "h": 7,
         "w": 12,
-        "x": 12,
-        "y": 48
+        "x": 8,
+        "y": 39
       },
       "fieldConfig": {
         "defaults": {
@@ -926,17 +685,80 @@
       },
       "targets": [
         {
-          "expr": "pg_client_backends_count{job=~\"$db\"}",
+          "expr": "pg_client_backends_count{node=~\"$node\"}",
           "legendFormat": "client backends",
           "refId": "A"
         },
         {
-          "expr": "pg_settings_max_connections{job=~\"$db\"}",
+          "expr": "pg_settings_max_connections{node=~\"$node\"}",
           "legendFormat": "max_connections",
           "refId": "B"
         }
       ],
       "description": "Watch: client backends vs max_connections. OK: < 80%. Fix: pooler; who took the slots — Connections by Role."
+    },
+    {
+      "id": 620,
+      "type": "timeseries",
+      "title": "Connections by Role",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_backends_by_user{node=~\"$node\"}",
+          "legendFormat": "{{datname}}/{{usename}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Watch: which database/role ate the max_connections slots. Fix: pooler for the culprit, per-role connection limit."
+    },
+    {
+      "id": 303,
+      "type": "timeseries",
+      "title": "Sessions by State",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 12,
+        "y": 46
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (state) (pg_stat_activity_count{node=~\"$node\"})",
+          "legendFormat": "{{state}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Watch: idle growth — an app without a pooler; idle in transaction growth — a source of locks and bloat. OK: idle in tx ≈ 0. Fix: pooler; idle_in_transaction_session_timeout."
     },
     {
       "id": 307,
@@ -950,7 +772,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 55
+        "y": 53
       },
       "fieldConfig": {
         "defaults": {
@@ -960,12 +782,12 @@
       },
       "targets": [
         {
-          "expr": "rate(pg_stat_checkpointer_num_timed_total{job=~\"$db\"}[10m]) * 3600",
+          "expr": "rate(pg_stat_checkpointer_num_timed_total{node=~\"$node\"}[10m]) * 3600",
           "legendFormat": "timed/час",
           "refId": "A"
         },
         {
-          "expr": "rate(pg_stat_checkpointer_num_requested_total{job=~\"$db\"}[10m]) * 3600",
+          "expr": "rate(pg_stat_checkpointer_num_requested_total{node=~\"$node\"}[10m]) * 3600",
           "legendFormat": "requested/час",
           "refId": "B"
         }
@@ -984,7 +806,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 55
+        "y": 53
       },
       "fieldConfig": {
         "defaults": {
@@ -1015,22 +837,64 @@
       },
       "targets": [
         {
-          "expr": "rate(pg_stat_wal{job=~\"$db\",kind=\"bytes\"}[1m])",
+          "expr": "rate(pg_stat_wal{node=~\"$node\",kind=\"bytes\"}[$__rate_interval])",
           "legendFormat": "WAL байт/с",
           "refId": "A"
         },
         {
-          "expr": "rate(pg_stat_wal{job=~\"$db\",kind=\"buffers_full\"}[1m])",
+          "expr": "rate(pg_stat_wal{node=~\"$node\",kind=\"buffers_full\"}[$__rate_interval])",
           "legendFormat": "buffers_full/с (растёт → мал wal_buffers)",
           "refId": "B"
         },
         {
-          "expr": "rate(pg_stat_wal{job=~\"$db\",kind=\"fpi\"}[1m]) / ignoring(kind) clamp_min(rate(pg_stat_wal{job=~\"$db\",kind=\"records\"}[1m]), 0.001)",
+          "expr": "rate(pg_stat_wal{node=~\"$node\",kind=\"fpi\"}[$__rate_interval]) / ignoring(kind) clamp_min(rate(pg_stat_wal{node=~\"$node\",kind=\"records\"}[$__rate_interval]), 0.001)",
           "legendFormat": "доля FPI в записях",
           "refId": "C"
         }
       ],
       "description": "Watch: bytes/s, buffers_full, FPI share right after a checkpoint. Fix: buffers_full growing → raise wal_buffers; high FPI → wal_compression / less frequent checkpoints; culprit — Top Queries by WAL."
+    },
+    {
+      "id": 615,
+      "type": "timeseries",
+      "title": "WAL Latency",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 61
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(pg_stat_wal_time_ms_total{node=~\"$node\",op=\"write\"}[$__rate_interval]) / ignoring(op, kind) clamp_min(rate(pg_stat_wal{node=~\"$node\",kind=\"write\"}[$__rate_interval]), 0.001)",
+          "legendFormat": "write мс/оп",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "rate(pg_stat_wal_time_ms_total{node=~\"$node\",op=\"sync\"}[$__rate_interval]) / ignoring(op, kind) clamp_min(rate(pg_stat_wal{node=~\"$node\",kind=\"sync\"}[$__rate_interval]), 0.001)",
+          "legendFormat": "sync мс/оп",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "description": "Watch: ms/op — the main commit latency driver under sync replication. OK: fsync single-digit ms. Fix: the disk under WAL (Disk Latency, OS), separate volume, synchronous_commit."
     },
     {
       "id": 312,
@@ -1043,8 +907,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 63
+        "x": 12,
+        "y": 61
       },
       "fieldConfig": {
         "defaults": {
@@ -1059,7 +923,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (backend_type) (rate(pg_stat_io_ops_total{job=~\"$db\",op=~\"writes|extends\"}[1m])) * 8192",
+          "expr": "sum by (backend_type) (rate(pg_stat_io_ops_total{node=~\"$node\",op=~\"writes|extends\"}[$__rate_interval])) * 8192",
           "legendFormat": "{{backend_type}}",
           "refId": "A"
         }
@@ -1077,8 +941,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 63
+        "x": 0,
+        "y": 69
       },
       "fieldConfig": {
         "defaults": {
@@ -1093,202 +957,12 @@
       },
       "targets": [
         {
-          "expr": "sum by (backend_type) (rate(pg_stat_io_ops_total{job=~\"$db\",op=\"reads\"}[1m])) * 8192",
+          "expr": "sum by (backend_type) (rate(pg_stat_io_ops_total{node=~\"$node\",op=\"reads\"}[$__rate_interval])) * 8192",
           "legendFormat": "{{backend_type}}",
           "refId": "A"
         }
       ],
       "description": "Watch: client reads growing = the working set no longer fits in memory. Fix: RAM/shared_buffers; who reads — Top Queries by Buffer Misses / Disk Reads."
-    },
-    {
-      "id": 615,
-      "type": "timeseries",
-      "title": "WAL Latency",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 71
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(pg_stat_wal_time_ms_total{job=~\"$db\",op=\"write\"}[1m]) / ignoring(op, kind) clamp_min(rate(pg_stat_wal{job=~\"$db\",kind=\"write\"}[1m]), 0.001)",
-          "legendFormat": "write мс/оп",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        },
-        {
-          "refId": "B",
-          "expr": "rate(pg_stat_wal_time_ms_total{job=~\"$db\",op=\"sync\"}[1m]) / ignoring(op, kind) clamp_min(rate(pg_stat_wal{job=~\"$db\",kind=\"sync\"}[1m]), 0.001)",
-          "legendFormat": "sync мс/оп",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "description": "Watch: ms/op — the main commit latency driver under sync replication. OK: fsync single-digit ms. Fix: the disk under WAL (Disk Latency, OS), separate volume, synchronous_commit."
-    },
-    {
-      "id": 314,
-      "type": "timeseries",
-      "title": "Buffer Evictions & Bgwriter",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 12,
-        "y": 71
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "maxwritten_clean/мин (лимит bgwriter)"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "short"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              }
-            ]
-          }
-        ]
-      },
-      "targets": [
-        {
-          "expr": "sum by (backend_type) (rate(pg_stat_io_ops_total{job=~\"$db\",op=\"fsyncs\"}[1m]))",
-          "legendFormat": "fsync {{backend_type}}",
-          "refId": "A"
-        },
-        {
-          "expr": "sum by (backend_type) (rate(pg_stat_io_ops_total{job=~\"$db\",op=\"evictions\"}[1m]))",
-          "legendFormat": "evict {{backend_type}}",
-          "refId": "B"
-        },
-        {
-          "expr": "rate(pg_stat_bgwriter_maxwritten_clean_total{job=~\"$db\"}[5m]) * 60",
-          "legendFormat": "maxwritten_clean/мин (лимит bgwriter)",
-          "refId": "C"
-        }
-      ],
-      "description": "Watch: evictions = pressure on shared_buffers; maxwritten_clean = bgwriter hitting its limit. Fix: raise shared_buffers, raise bgwriter_lru_maxpages."
-    },
-    {
-      "id": 315,
-      "type": "timeseries",
-      "title": "I/O Time by Backend",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 18,
-        "y": 71
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "sum by (backend_type, op) (rate(pg_stat_io_time_ms_total{job=~\"$db\"}[1m])) / 1000",
-          "legendFormat": "{{backend_type}} {{op}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: seconds of IO per second per subsystem (can exceed 1 — parallelism). Fix: by the dominating subsystem — checkpoints/vacuum/queries."
-    },
-    {
-      "id": 621,
-      "type": "timeseries",
-      "title": "I/O Latency (pg_stat_io)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 78
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "sum by (backend_type) (rate(pg_stat_io_time_ms_total{job=~\"$db\",op=\"read\"}[1m])) / clamp_min(sum by (backend_type) (rate(pg_stat_io_ops_total{job=~\"$db\",op=\"reads\"}[1m])), 0.001)",
-          "legendFormat": "{{backend_type}} read",
-          "refId": "A"
-        },
-        {
-          "expr": "sum by (backend_type) (rate(pg_stat_io_time_ms_total{job=~\"$db\",op=\"write\"}[1m])) / clamp_min(sum by (backend_type) (rate(pg_stat_io_ops_total{job=~\"$db\",op=\"writes\"}[1m])), 0.001)",
-          "legendFormat": "{{backend_type}} write",
-          "refId": "B"
-        }
-      ],
-      "description": "Watch: ms/op vs Disk Latency (OS): matches — disk-bound; much lower — the page cache is saving you. Fix: as Disk Latency."
-    },
-    {
-      "id": 620,
-      "type": "timeseries",
-      "title": "Connections by Role",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 78
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "pg_backends_by_user{job=~\"$db\"}",
-          "legendFormat": "{{datname}}/{{usename}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: which database/role ate the max_connections slots. Fix: pooler for the culprit, per-role connection limit."
     },
     {
       "id": 305,
@@ -1301,8 +975,8 @@
       "gridPos": {
         "h": 7,
         "w": 12,
-        "x": 0,
-        "y": 85
+        "x": 12,
+        "y": 69
       },
       "fieldConfig": {
         "defaults": {
@@ -1313,7 +987,7 @@
       },
       "targets": [
         {
-          "expr": "100 * sum by (datname) (rate(pg_stat_database_blks_hit{job=~\"$db\"}[5m])) / ((sum by (datname) (rate(pg_stat_database_blks_hit{job=~\"$db\"}[5m])) + sum by (datname) (rate(pg_stat_database_blks_read{job=~\"$db\"}[5m]))) > 0)",
+          "expr": "100 * sum by (datname) (rate(pg_stat_database_blks_hit{node=~\"$node\"}[5m])) / ((sum by (datname) (rate(pg_stat_database_blks_hit{node=~\"$node\"}[5m])) + sum by (datname) (rate(pg_stat_database_blks_read{node=~\"$node\"}[5m]))) > 0)",
           "legendFormat": "{{datname}}",
           "refId": "A"
         }
@@ -1321,43 +995,309 @@
       "description": "Watch: a sustained DOWNWARD trend, not the level. OK: > 99% for OLTP. Fix: RAM/shared_buffers; percentages deceive — cross-check absolute Disk Reads by Backend."
     },
     {
-      "id": 317,
-      "type": "timeseries",
-      "title": "Checkpoint & Block I/O Time",
+      "id": 350,
+      "type": "row",
+      "title": "Instance: IO Attribution",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 77
+      },
+      "panels": [
+        {
+          "id": 315,
+          "type": "timeseries",
+          "title": "I/O Time by Backend",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 78
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "expr": "sum by (backend_type, op) (rate(pg_stat_io_time_ms_total{node=~\"$node\"}[$__rate_interval])) / 1000",
+              "legendFormat": "{{backend_type}} {{op}}",
+              "refId": "A"
+            }
+          ],
+          "description": "Watch: seconds of IO per second per subsystem (can exceed 1 — parallelism). Fix: by the dominating subsystem — checkpoints/vacuum/queries."
+        },
+        {
+          "id": 621,
+          "type": "timeseries",
+          "title": "I/O Latency (pg_stat_io)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 6,
+            "y": 78
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "expr": "sum by (backend_type) (rate(pg_stat_io_time_ms_total{node=~\"$node\",op=\"read\"}[$__rate_interval])) / clamp_min(sum by (backend_type) (rate(pg_stat_io_ops_total{node=~\"$node\",op=\"reads\"}[$__rate_interval])), 0.001)",
+              "legendFormat": "{{backend_type}} read",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (backend_type) (rate(pg_stat_io_time_ms_total{node=~\"$node\",op=\"write\"}[$__rate_interval])) / clamp_min(sum by (backend_type) (rate(pg_stat_io_ops_total{node=~\"$node\",op=\"writes\"}[$__rate_interval])), 0.001)",
+              "legendFormat": "{{backend_type}} write",
+              "refId": "B"
+            }
+          ],
+          "description": "Watch: ms/op vs Disk Latency (OS): matches — disk-bound; much lower — the page cache is saving you. Fix: as Disk Latency."
+        },
+        {
+          "id": 314,
+          "type": "timeseries",
+          "title": "Buffer Evictions & Bgwriter",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 18,
+            "y": 78
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops"
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "maxwritten_clean/мин (лимит bgwriter)"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  },
+                  {
+                    "id": "custom.axisPlacement",
+                    "value": "right"
+                  }
+                ]
+              }
+            ]
+          },
+          "targets": [
+            {
+              "expr": "sum by (backend_type) (rate(pg_stat_io_ops_total{node=~\"$node\",op=\"fsyncs\"}[$__rate_interval]))",
+              "legendFormat": "fsync {{backend_type}}",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (backend_type) (rate(pg_stat_io_ops_total{node=~\"$node\",op=\"evictions\"}[$__rate_interval]))",
+              "legendFormat": "evict {{backend_type}}",
+              "refId": "B"
+            },
+            {
+              "expr": "rate(pg_stat_bgwriter_maxwritten_clean_total{node=~\"$node\"}[5m]) * 60",
+              "legendFormat": "maxwritten_clean/мин (лимит bgwriter)",
+              "refId": "C"
+            }
+          ],
+          "description": "Watch: evictions = pressure on shared_buffers; maxwritten_clean = bgwriter hitting its limit. Fix: raise shared_buffers, raise bgwriter_lru_maxpages."
+        },
+        {
+          "id": 317,
+          "type": "timeseries",
+          "title": "Checkpoint & Block I/O Time",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 85
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "expr": "sum by (op) (rate(pg_stat_checkpointer_time_ms_total{node=~\"$node\"}[5m])) / 1000",
+              "legendFormat": "checkpoint {{op}}",
+              "refId": "A"
+            },
+            {
+              "expr": "sum by (op) (rate(pg_stat_database_blk_time_ms{node=~\"$node\"}[$__rate_interval])) / 1000",
+              "legendFormat": "db blk {{op}}",
+              "refId": "B"
+            }
+          ],
+          "description": "Watch: checkpoint write/sync busy share and per-DB block IO time (can exceed 1). Fix: spread checkpoints; detailed attribution — I/O Time by Backend."
+        }
+      ]
+    },
+    {
+      "id": 360,
+      "type": "row",
+      "title": "Instance: Health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 78
+      },
+      "panels": []
+    },
+    {
+      "id": 301,
+      "type": "stat",
+      "title": "PostgreSQL Up",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 85
+        "w": 4,
+        "x": 0,
+        "y": 79
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       },
       "targets": [
         {
-          "expr": "sum by (op) (rate(pg_stat_checkpointer_time_ms_total{job=~\"$db\"}[5m])) / 1000",
-          "legendFormat": "checkpoint {{op}}",
+          "expr": "max(pg_up{node=~\"$node\"}) or on() vector(0)",
           "refId": "A"
+        }
+      ],
+      "description": "When the DB is down the pg_up series DISAPPEARS. Fix: exporter/network/database — collection health is up{job=~\"sql-.*\"}"
+    },
+    {
+      "id": 614,
+      "type": "stat",
+      "title": "Uptime",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 4,
+        "y": 79
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 600
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_postmaster_uptime_seconds{node=~\"$node\"}",
+          "refId": "A",
+          "legendFormat": ""
+        }
+      ],
+      "description": "Watch: a sharp drop = restart/crash-recovery/failover (red — younger than 10 min). Fix: reason in PG logs; cross-check OOM Kills"
+    },
+    {
+      "id": 319,
+      "type": "stat",
+      "title": "WAL Directory Size",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 8,
+        "y": 79
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_wal_directory_size_bytes{node=~\"$node\"}",
+          "refId": "A",
+          "legendFormat": "pg_wal"
         },
         {
-          "expr": "sum by (op) (rate(pg_stat_database_blk_time_ms{job=~\"$db\"}[1m])) / 1000",
-          "legendFormat": "db blk {{op}}",
+          "expr": "pg_settings_max_wal_size_bytes{node=~\"$node\"}",
+          "legendFormat": "max_wal_size",
           "refId": "B"
         }
       ],
-      "description": "Watch: checkpoint write/sync busy share and per-DB block IO time (can exceed 1). Fix: spread checkpoints; detailed attribution — I/O Time by Backend."
+      "description": "Watch: pg_wal vs the max_wal_size reference — checkpoints alone keep it near max_wal_size; growth beyond it = a dead slot or stuck archiver is holding WAL and checkpoints cannot free it. Fix: dead slot (Replication Slots), stuck archiver (WAL Archiver), checkpoints not keeping up",
+      "options": {
+        "textMode": "value_and_name"
+      }
     },
     {
-      "id": 303,
+      "id": 310,
       "type": "timeseries",
-      "title": "Sessions by State",
+      "title": "WAL Archiver",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1365,28 +1305,70 @@
       "gridPos": {
         "h": 7,
         "w": 8,
-        "x": 0,
-        "y": 92
+        "x": 12,
+        "y": 79
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "custom": {
-            "stacking": {
-              "mode": "normal"
-            }
-          }
+          "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "последний успех, сек назад (-1 = никогда)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "failed.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
       },
       "targets": [
         {
-          "expr": "sum by (state) (pg_stat_activity_count{job=~\"$db\"})",
-          "legendFormat": "{{state}}",
+          "expr": "rate(pg_stat_archiver_archived_count{node=~\"$node\"}[5m]) * 60",
+          "legendFormat": "archived/мин",
           "refId": "A"
+        },
+        {
+          "expr": "rate(pg_stat_archiver_failed_count{node=~\"$node\"}[5m]) * 60",
+          "legendFormat": "failed/мин",
+          "refId": "B"
+        },
+        {
+          "expr": "pg_archiver_pending_wals{node=~\"$node\"}",
+          "legendFormat": "очередь .ready (висящий архиватор виден здесь)",
+          "refId": "C"
+        },
+        {
+          "expr": "pg_archiver_last_archived_age_seconds{node=~\"$node\"}",
+          "legendFormat": "последний успех, сек назад (-1 = никогда)",
+          "refId": "D"
         }
       ],
-      "description": "Watch: idle growth — an app without a pooler; idle in transaction growth — a source of locks and bloat. OK: idle in tx ≈ 0. Fix: pooler; idle_in_transaction_session_timeout."
+      "description": "Watch: the .ready queue and last-success age — failed==0 with a STUCK archiver is false calm. OK: queue ≈ 0. Fix: archive_command/storage; a growing queue will fill the disk."
     },
     {
       "id": 306,
@@ -1399,62 +1381,44 @@
       "gridPos": {
         "h": 7,
         "w": 8,
-        "x": 8,
-        "y": 92
+        "x": 0,
+        "y": 86
       },
       "fieldConfig": {
         "defaults": {
           "unit": "short"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*ЖДЁТ.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
       },
       "targets": [
         {
-          "expr": "sum by (mode) (pg_locks_count{job=~\"$db\",granted=\"true\"})",
+          "expr": "sum by (mode) (pg_locks_count{node=~\"$node\",granted=\"true\"})",
           "legendFormat": "{{mode}}",
           "refId": "A"
         },
         {
-          "expr": "sum by (mode) (pg_locks_count{job=~\"$db\",granted=\"false\"})",
+          "expr": "sum by (mode) (pg_locks_count{node=~\"$node\",granted=\"false\"})",
           "legendFormat": "{{mode}} ЖДЁТ",
           "refId": "B"
         }
       ],
       "description": "Watch: the waiting series (granted=false) — the lock queue. OK: steadily 0 waiting. Fix: who holds whom — Blocking Sessions (Workload)."
-    },
-    {
-      "id": 304,
-      "type": "timeseries",
-      "title": "Transactions",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 92
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "sum by (datname) (rate(pg_stat_database_xact_commit{job=~\"$db\"}[1m]))",
-          "legendFormat": "commit {{datname}}",
-          "refId": "A"
-        },
-        {
-          "expr": "sum by (datname) (rate(pg_stat_database_xact_rollback{job=~\"$db\"}[1m]))",
-          "legendFormat": "rollback {{datname}}",
-          "refId": "B"
-        }
-      ],
-      "description": "Watch: a commit dip while waits grow = queued; rollback growth = errors/deadlocks/retries. Fix: DB Load (AAS) → by wait class."
     },
     {
       "id": 309,
@@ -1467,8 +1431,8 @@
       "gridPos": {
         "h": 7,
         "w": 8,
-        "x": 0,
-        "y": 99
+        "x": 8,
+        "y": 86
       },
       "fieldConfig": {
         "defaults": {
@@ -1506,22 +1470,37 @@
                 "value": "right"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "deadlocks.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
           }
         ]
       },
       "targets": [
         {
-          "expr": "sum(rate(pg_stat_database_deadlocks{job=~\"$db\"}[5m])) * 60",
+          "expr": "sum(rate(pg_stat_database_deadlocks{node=~\"$node\"}[5m])) * 60",
           "legendFormat": "deadlocks/мин",
           "refId": "A"
         },
         {
-          "expr": "sum(rate(pg_stat_database_temp{job=~\"$db\",kind=\"bytes\"}[5m]))",
+          "expr": "sum(rate(pg_stat_database_temp{node=~\"$node\",kind=\"bytes\"}[5m]))",
           "legendFormat": "temp байт/с",
           "refId": "B"
         },
         {
-          "expr": "sum(rate(pg_stat_database_temp{job=~\"$db\",kind=\"files\"}[5m])) * 60",
+          "expr": "sum(rate(pg_stat_database_temp{node=~\"$node\",kind=\"files\"}[5m])) * 60",
           "legendFormat": "temp файлов/мин",
           "refId": "C"
         }
@@ -1529,18 +1508,18 @@
       "description": "Watch: deadlocks/min > 0; temp bytes/s. Fix: deadlock — lock acquisition order in the app; temp — work_mem / the plan (Top Queries by Temp)."
     },
     {
-      "id": 310,
+      "id": 318,
       "type": "timeseries",
-      "title": "WAL Archiver",
+      "title": "Session Errors",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 99
+        "w": 12,
+        "x": 0,
+        "y": 93
       },
       "fieldConfig": {
         "defaults": {
@@ -1549,17 +1528,16 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byName",
-              "options": "последний успех, сек назад (-1 = никогда)"
+              "id": "byRegexp",
+              "options": ".*fatal.*"
             },
             "properties": [
               {
-                "id": "unit",
-                "value": "s"
-              },
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
               }
             ]
           }
@@ -1567,61 +1545,154 @@
       },
       "targets": [
         {
-          "expr": "rate(pg_stat_archiver_archived_count{job=~\"$db\"}[5m]) * 60",
-          "legendFormat": "archived/мин",
+          "expr": "sum by (kind) (rate(pg_stat_database_sessions{node=~\"$node\",kind!=\"total\"}[5m])) * 60",
+          "legendFormat": "sessions {{kind}}/мин",
           "refId": "A"
-        },
-        {
-          "expr": "rate(pg_stat_archiver_failed_count{job=~\"$db\"}[5m]) * 60",
-          "legendFormat": "failed/мин",
-          "refId": "B"
-        },
-        {
-          "expr": "pg_archiver_pending_wals{job=~\"$db\"}",
-          "legendFormat": "очередь .ready (висящий архиватор виден здесь)",
-          "refId": "C"
-        },
-        {
-          "expr": "pg_archiver_last_archived_age_seconds{job=~\"$db\"}",
-          "legendFormat": "последний успех, сек назад (-1 = никогда)",
-          "refId": "D"
         }
       ],
-      "description": "Watch: the .ready queue and last-success age — failed==0 with a STUCK archiver is false calm. OK: queue ≈ 0. Fix: archive_command/storage; a growing queue will fill the disk."
+      "description": "Watch: any sustained fatal/killed rate. OK: 0. Fix: killed — find who kills (OOM? admin?); fatal — client-side errors and auth failures. Page corruption lives in Checksum Failures."
     },
     {
-      "id": 320,
-      "type": "timeseries",
-      "title": "SLRU Caches",
+      "id": 617,
+      "type": "stat",
+      "title": "Checksum Failures",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 99
+        "w": 12,
+        "x": 12,
+        "y": 93
+      },
+      "options": {
+        "textMode": "value_and_name",
+        "colorMode": "background"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "ops"
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "checksums enabled"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "OFF — nothing is verified",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "on",
+                        "color": "green",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "max(pg_checksum_failures_total{node=~\"$node\"})",
+          "legendFormat": "failures (cumulative)",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "min(pg_settings_data_checksums{node=~\"$node\"})",
+          "legendFormat": "checksums enabled",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "description": "Cumulative on purpose: a rate would erase the incident from the panel minutes after it happened. OK: 0 failures AND checksums enabled — with data_checksums off the zero means nothing is being verified, not that pages are healthy. Fix: any growth = page corruption; restore the relation from backup/replica and check disk/RAM. Enabling needs initdb --data-checksums or offline pg_checksums."
+    },
+    {
+      "id": 618,
+      "type": "stat",
+      "title": "Config Errors",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 20,
+        "y": 100
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "n/a",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       },
       "targets": [
         {
-          "expr": "sum by (name) (rate(pg_slru_blks_total{job=~\"$db\",op=\"read\"}[5m]))",
-          "legendFormat": "{{name}} read",
-          "refId": "A"
-        },
-        {
-          "expr": "sum by (name) (rate(pg_slru_blks_total{job=~\"$db\",op=\"written\"}[5m]))",
-          "legendFormat": "{{name}} written",
-          "refId": "B"
+          "expr": "pg_config_file_errors{node=~\"$node\"}",
+          "legendFormat": "{{kind}}",
+          "refId": "A",
+          "instant": true
         }
       ],
-      "description": "Watch: read/written spikes on SubtransSLRU/MultiXact — sudden degradation, visible in AAS only as an anonymous LWLock. Fix: long transactions with savepoints, SELECT FOR SHARE; PG17 — SLRU size GUCs."
+      "description": "Broken lines in pg_hba.conf (hba) / postgresql.conf (config): a reload does NOT apply them — the server silently keeps the OLD values, and the NEXT restart will fail on them. OK: both 0. Fix: the exact lines are in pg_hba_file_rules / pg_file_settings (WHERE error IS NOT NULL); restart-pending changes are a different signal (pending restart line in Long Transactions & 2PC)."
     },
     {
       "id": 311,
@@ -1635,7 +1706,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 106
+        "y": 100
       },
       "fieldConfig": {
         "defaults": {
@@ -1662,22 +1733,22 @@
       },
       "targets": [
         {
-          "expr": "pg_long_running_transactions{job=~\"$db\"}",
-          "legendFormat": "транзакции > 5 мин",
+          "expr": "pg_long_running_transactions{node=~\"$node\"}",
+          "legendFormat": "транзакции > 10 сек",
           "refId": "A"
         },
         {
-          "expr": "pg_prepared_xacts{job=~\"$db\",kind=\"count\"}",
+          "expr": "pg_prepared_xacts{node=~\"$node\",kind=\"count\"}",
           "legendFormat": "prepared xacts",
           "refId": "B"
         },
         {
-          "expr": "pg_settings_pending_restart{job=~\"$db\"}",
+          "expr": "pg_settings_pending_restart{node=~\"$node\"}",
           "legendFormat": "pending restart",
           "refId": "C"
         },
         {
-          "expr": "pg_prepared_xacts{job=~\"$db\",kind=\"oldest_seconds\"}",
+          "expr": "pg_prepared_xacts{node=~\"$node\",kind=\"oldest_seconds\"}",
           "legendFormat": "старейший prepared, сек",
           "refId": "D"
         }
@@ -1685,107 +1756,38 @@
       "description": "Watch: transactions holding vacuum and xmin; forgotten prepared xacts. OK: prepared ≈ 0. Fix: kill/fix the client; COMMIT/ROLLBACK PREPARED; apply pending restarts in a window."
     },
     {
-      "id": 318,
+      "id": 320,
       "type": "timeseries",
-      "title": "Session Errors & Checksums",
+      "title": "SLRU Caches",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 7,
-        "w": 12,
+        "w": 8,
         "x": 12,
-        "y": 106
+        "y": 100
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "ops"
         },
         "overrides": []
       },
       "targets": [
         {
-          "expr": "sum by (kind) (rate(pg_stat_database_sessions{job=~\"$db\",kind!=\"total\"}[5m])) * 60",
-          "legendFormat": "sessions {{kind}}/мин",
+          "expr": "sum by (name) (rate(pg_slru_blks_total{node=~\"$node\",op=\"read\"}[5m]))",
+          "legendFormat": "{{name}} read",
           "refId": "A"
         },
         {
-          "expr": "rate(pg_checksum_failures_total{job=~\"$db\"}[5m]) * 60",
-          "legendFormat": "checksum failures/мин",
+          "expr": "sum by (name) (rate(pg_slru_blks_total{node=~\"$node\",op=\"written\"}[5m]))",
+          "legendFormat": "{{name}} written",
           "refId": "B"
         }
       ],
-      "description": "Watch: fatal/killed spikes; checksum > 0 = page corruption. OK: checksum strictly 0. Fix: checksum — disk/memory, restore from backup/replica; killed — find who kills (OOM? admin?)."
-    },
-    {
-      "id": 631,
-      "type": "table",
-      "title": "Instance Settings",
-      "datasource": {
-        "type": "postgres",
-        "uid": "pg-${db}"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 113
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "name"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 300
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "pending"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 160
-              }
-            ]
-          }
-        ]
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT name,\n       current_setting(name) AS value,\n       CASE WHEN pending_restart THEN 'ЖДЁТ РЕСТАРТА' ELSE '' END AS pending,\n       CASE WHEN source = 'configuration file' AND sourcefile LIKE '%postgresql.auto.conf'\n            THEN 'ALTER SYSTEM' ELSE source END AS source\nFROM pg_settings\nWHERE name = ANY(ARRAY['max_connections','max_files_per_process','shared_buffers','effective_cache_size','work_mem','maintenance_work_mem','huge_pages','huge_page_size','shared_memory_size_in_huge_pages','max_wal_size','min_wal_size','checkpoint_timeout','checkpoint_completion_target','wal_buffers','wal_compression','synchronous_commit','synchronous_standby_names','autovacuum_max_workers','autovacuum_naptime','autovacuum_vacuum_cost_limit','bgwriter_lru_maxpages','track_io_timing','track_wal_io_timing','shared_preload_libraries'])\nORDER BY array_position(ARRAY['max_connections','max_files_per_process','shared_buffers','effective_cache_size','work_mem','maintenance_work_mem','huge_pages','huge_page_size','shared_memory_size_in_huge_pages','max_wal_size','min_wal_size','checkpoint_timeout','checkpoint_completion_target','wal_buffers','wal_compression','synchronous_commit','synchronous_standby_names','autovacuum_max_workers','autovacuum_naptime','autovacuum_vacuum_cost_limit','bgwriter_lru_maxpages','track_io_timing','track_wal_io_timing','shared_preload_libraries'], name)",
-          "datasource": {
-            "type": "postgres",
-            "uid": "pg-${db}"
-          }
-        }
-      ],
-      "description": "Watch: the pending-restart flag; source = ALTER SYSTEM vs configuration file; on standby — ITS OWN values. Live SQL, the datasource follows the instance selector (uid pg-${db}; on «datasource not found» revert to $pgds). Fix: restart in a window; cross-check hugepages with Hardware & Kernel Settings (OS)."
-    },
-    {
-      "id": 400,
-      "type": "row",
-      "title": "Databases & Objects",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 121
-      },
-      "collapsed": false
+      "description": "Watch: read/written spikes on SubtransSLRU/MultiXact — sudden degradation, visible in AAS only as an anonymous LWLock. Fix: long transactions with savepoints, SELECT FOR SHARE; PG17 — SLRU size GUCs."
     },
     {
       "id": 402,
@@ -1799,7 +1801,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 122
+        "y": 107
       },
       "fieldConfig": {
         "defaults": {
@@ -1809,385 +1811,17 @@
       },
       "targets": [
         {
-          "expr": "max(pg_db_xid_age{job=~\"$db\"})",
+          "expr": "max(pg_db_xid_age{node=~\"$node\"})",
           "legendFormat": "max xid age",
           "refId": "A"
         },
         {
-          "expr": "max(pg_db_mxid_age{job=~\"$db\"})",
+          "expr": "max(pg_db_mxid_age{node=~\"$node\"})",
           "legendFormat": "max mxid age",
           "refId": "B"
         }
       ],
       "description": "Watch: growth without a plateau = autovacuum can't freeze fast enough; the only metric able to stop the database entirely. OK: well below 200M. Fix: Xmin Horizon (who holds it), workers/cost limit."
-    },
-    {
-      "id": 409,
-      "type": "stat",
-      "title": "Tables Needing Vacuum",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 8,
-        "y": 122
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 10
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "pg_tables_need_vacuum{job=~\"$db\"}",
-          "refId": "A"
-        }
-      ],
-      "description": "OK: 0 to a few. Fix: workers/naptime/cost; growing while vacuum runs — xmin is held (Workload)."
-    },
-    {
-      "id": 410,
-      "type": "stat",
-      "title": "Unused Indexes",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 12,
-        "y": 122
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "pg_unused_indexes{job=~\"$db\",kind=\"count\"}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: dead weight — a price paid on every UPDATE. Fix: DROP INDEX CONCURRENTLY after checking usage on replicas."
-    },
-    {
-      "id": 404,
-      "type": "stat",
-      "title": "Invalid Indexes",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 16,
-        "y": 122
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "pg_invalid_indexes{job=~\"$db\"}",
-          "refId": "A"
-        }
-      ],
-      "description": "OK: 0 (leftovers of a failed CREATE INDEX CONCURRENTLY). Fix: REINDEX CONCURRENTLY or DROP+CREATE."
-    },
-    {
-      "id": 411,
-      "type": "stat",
-      "title": "Sequence Exhaustion",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 20,
-        "y": 122
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 60
-              },
-              {
-                "color": "red",
-                "value": 85
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(1, pg_sequence_used_pct{job=~\"$db\"})",
-          "refId": "A",
-          "legendFormat": "{{schemaname}}.{{seqname}}",
-          "instant": true,
-          "range": false
-        }
-      ],
-      "options": {
-        "textMode": "value_and_name"
-      },
-      "description": "OK: < 60%. Fix: migrate to bigint / setval; the label shows which sequence."
-    },
-    {
-      "id": 401,
-      "type": "timeseries",
-      "title": "Database Size",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 129
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "pg_db_size_bytes{job=~\"$db\"}",
-          "legendFormat": "{{datname}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: trend breaks. Fix: the 'running out of space' route: WAL → temp → bloat."
-    },
-    {
-      "id": 405,
-      "type": "timeseries",
-      "title": "Table Size (top 20)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 129
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "pg_table_size_bytes{job=~\"$db\",part=\"total\"}",
-          "legendFormat": "{{schemaname}}.{{relname}}",
-          "refId": "A"
-        },
-        {
-          "expr": "sum(pg_table_size_bytes{job=~\"$db\",part=\"index\"})",
-          "legendFormat": "все индексы",
-          "refId": "B"
-        }
-      ],
-      "description": "Watch: a sharp break = bloat after mass UPDATE/DELETE. Fix: pg_repack."
-    },
-    {
-      "id": 403,
-      "type": "timeseries",
-      "title": "Dead Tuples",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 129
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "pg_table_tuples{job=~\"$db\",kind=\"dead\"}",
-          "legendFormat": "{{schemaname}}.{{relname}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: growth while autovacuum runs = something holds it back. Fix: Xmin Horizon, workers."
-    },
-    {
-      "id": 406,
-      "type": "timeseries",
-      "title": "Seq vs Index Scans",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 137
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "rate(pg_table_activity_total{job=~\"$db\",op=\"seq_scan\"}[5m])",
-          "legendFormat": "seq {{schemaname}}.{{relname}}",
-          "refId": "A"
-        },
-        {
-          "expr": "rate(pg_table_activity_total{job=~\"$db\",op=\"idx_scan\"}[5m])",
-          "legendFormat": "idx {{schemaname}}.{{relname}}",
-          "refId": "B"
-        }
-      ],
-      "description": "Watch: seq scans on large tables — index candidates. Fix: add an index; cross-check Top Queries by Buffer Misses."
-    },
-    {
-      "id": 407,
-      "type": "timeseries",
-      "title": "HOT Update Ratio",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 137
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "max": 100
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "100 * sum by (schemaname, relname) (rate(pg_table_activity_total{job=~\"$db\",op=\"tup_hot_upd\"}[5m])) / clamp_min(sum by (schemaname, relname) (rate(pg_table_activity_total{job=~\"$db\",op=\"tup_upd\"}[5m])), 0.001)",
-          "legendFormat": "{{schemaname}}.{{relname}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: < 100% on UPDATE-heavy tables = updates touch indexes. Fix: fillfactor < 100, don't index updated columns."
-    },
-    {
-      "id": 408,
-      "type": "timeseries",
-      "title": "Last Vacuum / Analyze",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 137
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "pg_table_maintenance_age_seconds{job=~\"$db\",kind=\"vacuum\"}",
-          "legendFormat": "vacuum {{schemaname}}.{{relname}}",
-          "refId": "A"
-        },
-        {
-          "expr": "pg_table_maintenance_age_seconds{job=~\"$db\",kind=\"analyze\"}",
-          "legendFormat": "analyze {{schemaname}}.{{relname}}",
-          "refId": "B"
-        }
-      ],
-      "description": "Watch: -1 = never; a stale ANALYZE = stale planner stats = bad plans. Fix: ANALYZE, per-table autovacuum settings; cross-check Plan Flip Detector."
     },
     {
       "id": 412,
@@ -2200,8 +1834,8 @@
       "gridPos": {
         "h": 7,
         "w": 8,
-        "x": 0,
-        "y": 144
+        "x": 8,
+        "y": 107
       },
       "fieldConfig": {
         "defaults": {
@@ -2212,7 +1846,7 @@
       },
       "targets": [
         {
-          "expr": "pg_vacuum_progress_pct{job=~\"$db\"}",
+          "expr": "pg_vacuum_progress_pct{node=~\"$node\",datname=~\"$datname\"}",
           "legendFormat": "{{schemaname}}.{{relname}}: {{phase}}",
           "refId": "A"
         }
@@ -2220,74 +1854,17 @@
       "description": "Watch: a phase stuck for hours = a huge table or a throttled cost limit. Fix: raise vacuum_cost_limit / lower cost_delay; partitioning."
     },
     {
-      "id": 413,
-      "type": "timeseries",
-      "title": "Table Bloat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 144
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, pg_table_bloat{job=~\"$db\",kind=\"wasted_bytes\"})",
-          "legendFormat": "{{schemaname}}.{{relname}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Hourly estimate; dead tuples != bloat — vacuum frees no space back. Fix: pg_repack/VACUUM FULL; verify with pgstattuple before acting."
-    },
-    {
-      "id": 414,
-      "type": "timeseries",
-      "title": "Index Bloat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 144
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, pg_index_bloat{job=~\"$db\",kind=\"wasted_bytes\"})",
-          "legendFormat": "{{schemaname}}.{{indexrelname}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Hourly estimate; vacuum does not shrink indexes. Fix: REINDEX CONCURRENTLY."
-    },
-    {
       "id": 500,
       "type": "row",
       "title": "Workload",
+      "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 151
+        "y": 114
       },
-      "collapsed": false
+      "panels": []
     },
     {
       "id": 501,
@@ -2301,7 +1878,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 152
+        "y": 115
       },
       "fieldConfig": {
         "defaults": {
@@ -2311,7 +1888,7 @@
       },
       "targets": [
         {
-          "expr": "rate(pg_statements_calls_total{job=~\"$db\"}[1m])",
+          "expr": "rate(pg_statements_calls_total{node=~\"$node\"}[$__rate_interval])",
           "legendFormat": "qps",
           "refId": "A"
         }
@@ -2330,7 +1907,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 152
+        "y": 115
       },
       "fieldConfig": {
         "defaults": {
@@ -2340,12 +1917,12 @@
       },
       "targets": [
         {
-          "expr": "1000 * rate(pg_statements_exec_seconds_total{job=~\"$db\"}[1m]) / clamp_min(rate(pg_statements_calls_total{job=~\"$db\"}[1m]), 0.001)",
+          "expr": "1000 * rate(pg_statements_exec_seconds_total{node=~\"$node\"}[$__rate_interval]) / clamp_min(rate(pg_statements_calls_total{node=~\"$node\"}[$__rate_interval]), 0.001)",
           "legendFormat": "avg latency",
           "refId": "A"
         }
       ],
-      "description": "Watch: the trend; the average hides tails — see Latency Spread. Fix: DB Load (AAS) → class → tops."
+      "description": "Watch: the trend; the average hides tails — see Mean Latency Spread Across Queries. Fix: DB Load (AAS) → class → tops."
     },
     {
       "id": 503,
@@ -2359,7 +1936,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 152
+        "y": 115
       },
       "fieldConfig": {
         "defaults": {
@@ -2369,17 +1946,17 @@
       },
       "targets": [
         {
-          "expr": "pg_oldest_xact_seconds{job=~\"$db\"}",
+          "expr": "pg_oldest_xact_seconds{node=~\"$node\"}",
           "legendFormat": "oldest xact",
           "refId": "A"
         },
         {
-          "expr": "pg_longest_active_query_seconds{job=~\"$db\"}",
+          "expr": "pg_longest_active_query_seconds{node=~\"$node\"}",
           "legendFormat": "longest active query",
           "refId": "B"
         },
         {
-          "expr": "pg_longest_idle_in_xact_seconds{job=~\"$db\"}",
+          "expr": "pg_longest_idle_in_xact_seconds{node=~\"$node\"}",
           "legendFormat": "longest idle in xact",
           "refId": "C"
         }
@@ -2398,7 +1975,7 @@
         "h": 9,
         "w": 24,
         "x": 0,
-        "y": 159
+        "y": 122
       },
       "fieldConfig": {
         "defaults": {
@@ -2409,13 +1986,58 @@
             }
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cores"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "mode": "none"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
       },
       "targets": [
         {
-          "expr": "sum by (event_type) (rate(pg_wait_profile_total{job=~\"$db\"}[1m])) / 100",
+          "expr": "sum by (event_type) (rate(pg_wait_profile_total{node=~\"$node\"}[$__rate_interval])) / 100",
           "legendFormat": "{{event_type}}",
           "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "expr": "count(node_cpu_seconds_total{host=~\"$host\",mode=\"idle\"})",
+          "legendFormat": "cores",
+          "refId": "B",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -2427,16 +2049,16 @@
     {
       "id": 623,
       "type": "table",
-      "title": "Blocking Sessions",
+      "title": "Blocking Sessions (live — ignores dashboard time range)",
       "datasource": {
         "type": "postgres",
-        "uid": "pg-${db}"
+        "uid": "pg-${node}"
       },
       "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 168
+        "y": 131
       },
       "fieldConfig": {
         "defaults": {},
@@ -2450,44 +2072,11 @@
           "rawSql": "SELECT\n  w.pid                                                   AS waiter_pid,\n  bp.pid                                                  AS blocker_pid,\n  w.usename                                               AS waiter_user,\n  b.usename                                               AS blocker_user,\n  b.state                                                 AS blocker_state,\n  ROUND(EXTRACT(EPOCH FROM (now() - w.state_change)))::int AS wait_s,\n  COALESCE(w.query_id::text, '')                          AS waiter_queryid,\n  LEFT(regexp_replace(w.query, '\\s+', ' ', 'g'), 70)      AS waiter_query,\n  LEFT(regexp_replace(b.query, '\\s+', ' ', 'g'), 70)      AS blocker_last_query\nFROM pg_stat_activity w\nCROSS JOIN LATERAL unnest(pg_blocking_pids(w.pid)) AS bp(pid)\nJOIN pg_stat_activity b ON b.pid = bp.pid\nWHERE w.wait_event_type = 'Lock'\nORDER BY wait_s DESC\nLIMIT 20",
           "datasource": {
             "type": "postgres",
-            "uid": "pg-${db}"
+            "uid": "pg-${node}"
           }
         }
       ],
-      "description": "Empty = no lock queue. blocker_state = idle in transaction — the classic root cause. Live SQL as role monitoring (timeouts 5s/1s); the datasource follows the instance selector (uid pg-${db}; on «datasource not found» revert to $pgds). Fix: terminate the blocker, fix the client."
-    },
-    {
-      "id": 516,
-      "type": "timeseries",
-      "title": "Top Queries by Wait Time",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 176
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, sum by (queryid) (rate(pg_wait_query_profile_total{job=~\"$db\"}[5m])) / 100)",
-          "legendFormat": "qid={{queryid}}",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "description": "Ranks by total active time (CPU + waits), sees queries in flight. Fix: queryid → Query Text Lookup below."
+      "description": "Empty = no lock queue. blocker_state = idle in transaction — the classic root cause. Live SQL as role monitoring (timeouts 5s/1s); the datasource follows the instance selector (uid pg-${node}; on «datasource not found» revert to $pgds). Fix: terminate the blocker, fix the client."
     },
     {
       "id": 519,
@@ -2500,8 +2089,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 176
+        "x": 0,
+        "y": 139
       },
       "fieldConfig": {
         "defaults": {
@@ -2511,125 +2100,12 @@
       },
       "targets": [
         {
-          "expr": "topk(10, sum by (event_type, event) (rate(pg_wait_profile_total{job=~\"$db\"}[5m])) / 100)",
+          "expr": "topk(10, sum by (event_type, event) (rate(pg_wait_profile_total{node=~\"$node\"}[5m])) / 100)",
           "legendFormat": "{{event_type}}:{{event}}",
           "refId": "A"
         }
       ],
       "description": "Watch: the specific event — DataFileRead vs WALSync vs Lock:transactionid are different diseases of one class. Fix: per event."
-    },
-    {
-      "id": 505,
-      "type": "timeseries",
-      "title": "Top Queries by Time",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 184
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, rate(pg_top_query_exec_seconds_total{job=~\"$db\"}[5m]))",
-          "legendFormat": "{{datname}} qid={{queryid}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Share of DB time (can exceed 1 — parallelism). Fix: the culprit's plan — auto_explain (grep qid=)."
-    },
-    {
-      "id": 506,
-      "type": "timeseries",
-      "title": "Top Queries by Calls",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 184
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, rate(pg_top_query_calls_total{job=~\"$db\"}[5m]))",
-          "legendFormat": "{{datname}} qid={{queryid}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: traffic concentration in a handful of queries. Fix: client-side caching/batching."
-    },
-    {
-      "id": 517,
-      "type": "timeseries",
-      "title": "Latency Spread (p50–p99)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 192
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "custom": {
-            "scaleDistribution": {
-              "type": "log",
-              "log": 10
-            }
-          }
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "quantile(0.50, 1000 * rate(pg_query_exec_seconds_total{job=~\"$db\"}[5m]) / (rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0))",
-          "legendFormat": "p50",
-          "refId": "P50"
-        },
-        {
-          "expr": "quantile(0.75, 1000 * rate(pg_query_exec_seconds_total{job=~\"$db\"}[5m]) / (rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0))",
-          "legendFormat": "p75",
-          "refId": "P75"
-        },
-        {
-          "expr": "quantile(0.90, 1000 * rate(pg_query_exec_seconds_total{job=~\"$db\"}[5m]) / (rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0))",
-          "legendFormat": "p90",
-          "refId": "P90"
-        },
-        {
-          "expr": "quantile(0.95, 1000 * rate(pg_query_exec_seconds_total{job=~\"$db\"}[5m]) / (rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0))",
-          "legendFormat": "p95",
-          "refId": "P95"
-        },
-        {
-          "expr": "quantile(0.99, 1000 * rate(pg_query_exec_seconds_total{job=~\"$db\"}[5m]) / (rate(pg_query_calls_total{job=~\"$db\"}[5m]) > 0))",
-          "legendFormat": "p99",
-          "refId": "P99"
-        }
-      ],
-      "description": "Percentiles of per-query AVERAGES (not executions — pgss doesn't keep those). Watch: the p99/p50 gap = a few heavy queries against a fast mass. Fix: Top Queries by Time."
     },
     {
       "id": 504,
@@ -2643,7 +2119,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 192
+        "y": 139
       },
       "fieldConfig": {
         "defaults": {
@@ -2653,12 +2129,12 @@
       },
       "targets": [
         {
-          "expr": "pg_autovacuum_workers{job=~\"$db\"}",
+          "expr": "pg_autovacuum_workers{node=~\"$node\"}",
           "legendFormat": "autovacuum workers",
           "refId": "B"
         },
         {
-          "expr": "pg_settings_autovacuum_max_workers{job=~\"$db\"}",
+          "expr": "pg_settings_autovacuum_max_workers{node=~\"$node\"}",
           "legendFormat": "autovacuum_max_workers (потолок)",
           "refId": "C"
         }
@@ -2668,7 +2144,7 @@
     {
       "id": 508,
       "type": "timeseries",
-      "title": "Xmin Horizon",
+      "title": "Xmin Horizon by Holder",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2677,7 +2153,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 199
+        "y": 147
       },
       "fieldConfig": {
         "defaults": {
@@ -2687,17 +2163,86 @@
       },
       "targets": [
         {
-          "expr": "pg_xmin_horizon_age{job=~\"$db\"}",
-          "legendFormat": "xmin horizon age",
+          "expr": "max(pg_xmin_horizon_age{node=~\"$node\"})",
+          "legendFormat": "effective horizon",
+          "refId": "A"
+        },
+        {
+          "expr": "pg_xmin_horizon_age{node=~\"$node\"}",
+          "legendFormat": "{{source}}",
+          "refId": "B"
+        }
+      ],
+      "description": "Vacuum cannot clean rows newer than the oldest xmin — this panel names WHO holds it. Sources: session (open transaction), walsender (standby with hot_standby_feedback), prepared_xact (forgotten 2PC), replication_slot (xmin/catalog_xmin, incl. a dead logical consumer). Watch: the effective horizon is the max across sources; growth = dead rows pile up cluster-wide. Fix: per source — kill/fix the session, COMMIT/ROLLBACK PREPARED, revive or drop the slot, reconsider hot_standby_feedback. Per-pid detail: activity/xmin_horizon.sql."
+    },
+    {
+      "id": 600,
+      "type": "row",
+      "title": "Replication (cluster-wide)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 154
+      },
+      "panels": []
+    },
+    {
+      "id": 608,
+      "type": "timeseries",
+      "title": "Node Roles",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 155
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "primary",
+                  "index": 0
+                },
+                "1": {
+                  "text": "standby",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_in_recovery",
+          "legendFormat": "{{node}}",
           "refId": "A"
         }
       ],
-      "description": "Watch: growth = vacuum is held back, dead rows pile up. Fix: find the holder — Long Transactions, slots, prepared."
+      "description": "Cluster-wide (ignores node/host selectors): split brain is only visible with ALL nodes on one panel. 0 = primary, 1 = standby, per node. Role is state, not a label: a failover flips the line instead of renaming series. Watch: a line crossing = promote happened; two lines at 0 = split brain, no line at 0 = no primary (writes are down)."
     },
     {
-      "id": 512,
+      "id": 609,
       "type": "timeseries",
-      "title": "Top Queries by Rows",
+      "title": "Timeline ID",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2706,278 +2251,26 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 199
+        "y": 155
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, rate(pg_top_query_resources_total{job=~\"$db\",kind=\"rows\"}[5m]))",
-          "legendFormat": "qid={{queryid}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: rows/s as a proxy for over-fetch and network traffic; weight = rows per call. Fix: LIMIT/pagination, drop unneeded columns/rows client-side."
-    },
-    {
-      "id": 509,
-      "type": "timeseries",
-      "title": "Top Queries by Buffer Misses",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 206
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, rate(pg_top_query_resources_total{job=~\"$db\",kind=\"shared_blks_read\"}[5m]) * 8192)",
-          "legendFormat": "qid={{queryid}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Reads past shared_buffers — possibly OS cache, NOT necessarily disk (physics — Top Queries by Disk Reads). Fix: indexes/RAM."
-    },
-    {
-      "id": 510,
-      "type": "timeseries",
-      "title": "Top Queries by Temp",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 206
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, rate(pg_top_temp_query_blks_total{job=~\"$db\"}[5m]) * 8192)",
-          "legendFormat": "qid={{queryid}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Who spills to disk. Fix: work_mem (careful: × connections), fix the plan (sorts/hashes)."
-    },
-    {
-      "id": 511,
-      "type": "timeseries",
-      "title": "Top Queries by WAL",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 206
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, rate(pg_top_wal_query_bytes_total{job=~\"$db\"}[5m]))",
-          "legendFormat": "qid={{queryid}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Who generates WAL — the culprit of checkpoint storms and replication lag. Fix: batch UPDATEs, drop redundant indexes (each one = WAL)."
-    },
-    {
-      "id": 520,
-      "type": "timeseries",
-      "title": "Top Queries by CPU",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 213
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, sum by (queryid) (rate(pg_kcache_query_cpu_seconds_total{job=~\"$db\"}[5m])))",
-          "legendFormat": "qid={{queryid}}",
-          "refId": "A"
-        },
-        {
-          "expr": "sum(rate(pg_kcache_cpu_seconds_total{job=~\"$db\"}[5m]))",
-          "legendFormat": "вся БД (сверить с CPU хоста, слой 1)",
-          "refId": "B"
-        }
-      ],
-      "description": "Real CPU (pg_stat_kcache); the whole-DB line — compare with host CPU Usage: whose CPU is it. Fix: the culprit's plan/JIT/functions."
-    },
-    {
-      "id": 522,
-      "type": "timeseries",
-      "title": "Top Queries by Disk Reads",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 213
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, sum by (queryid) (rate(pg_kcache_query_io_bytes_total{job=~\"$db\",op=\"reads\"}[5m])))",
-          "legendFormat": "read qid={{queryid}}",
-          "refId": "A"
-        }
-      ],
-      "description": "True physical disk (getrusage), OS cache not counted — unlike Top Queries by Buffer Misses. Fix: indexes, RAM, a faster volume."
-    },
-    {
-      "id": 521,
-      "type": "timeseries",
-      "title": "Plan Flip Detector",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 213
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "topk(10, pg_top_query_time_ms{job=~\"$db\",stat=\"stddev\"} / ignoring(stat) clamp_min(pg_top_query_time_ms{job=~\"$db\",stat=\"mean\"}, 0.001))",
-          "legendFormat": "{{datname}} qid={{queryid}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: stddev/mean growth at an unchanged rate = bimodal latency = the plan likely flipped. Fix: the plan in the auto_explain log (qid=), ANALYZE tables, pin the plan."
-    },
-    {
-      "id": 514,
-      "type": "table",
-      "title": "Query Text Lookup",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 220
-      },
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "query"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 900
-              }
-            ]
+          "unit": "short",
+          "custom": {
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2
           }
-        ]
+        },
+        "overrides": []
       },
       "targets": [
         {
-          "expr": "pg_query_info{job=~\"$db\"}",
-          "format": "table",
-          "instant": true,
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
+          "expr": "pg_timeline_id",
+          "legendFormat": "{{node}}",
+          "refId": "A"
         }
       ],
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "Value": true,
-              "__name__": true,
-              "instance": true,
-              "job": true,
-              "target": true
-            },
-            "indexByName": {
-              "queryid": 0,
-              "datname": 1,
-              "query": 2
-            }
-          }
-        }
-      ],
-      "description": "Texts for top-10 by time/WAL/temp. For queryids from other tops — SQL straight into pgss (SELECT query FROM pg_stat_statements WHERE queryid = ...)."
-    },
-    {
-      "id": 600,
-      "type": "row",
-      "title": "Replication",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 228
-      },
-      "collapsed": false
+      "description": "Cluster-wide (ignores node/host selectors): timeline divergence is only visible with ALL nodes on one panel. Timeline increments on every promote — proof a failover actually happened (annotated on all panels). Watch: nodes on DIFFERENT timelines = the standby did not follow the new primary; it needs pg_rewind or a rebuild."
     },
     {
       "id": 601,
@@ -2991,7 +2284,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 229
+        "y": 162
       },
       "fieldConfig": {
         "defaults": {
@@ -3001,7 +2294,7 @@
       },
       "targets": [
         {
-          "expr": "pg_stat_replication_lag_seconds{host=~\"$host\"}",
+          "expr": "pg_stat_replication_lag_seconds",
           "legendFormat": "{{application_name}} {{stage}}",
           "refId": "A"
         }
@@ -3020,7 +2313,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 229
+        "y": 162
       },
       "fieldConfig": {
         "defaults": {
@@ -3030,7 +2323,7 @@
       },
       "targets": [
         {
-          "expr": "pg_stat_replication_lag_bytes{host=~\"$host\",stage=~\"sent|replay\"}",
+          "expr": "pg_stat_replication_lag_bytes{stage=~\"sent|replay\"}",
           "legendFormat": "{{application_name}} {{stage}}",
           "refId": "A"
         }
@@ -3049,11 +2342,12 @@
         "h": 7,
         "w": 4,
         "x": 16,
-        "y": 229
+        "y": 162
       },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "no primary",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -3072,11 +2366,11 @@
       },
       "targets": [
         {
-          "expr": "pg_sync_standbys{job=\"primary\",host=~\"$host\"} or on() vector(0)",
+          "expr": "pg_sync_standbys and on(node) (pg_in_recovery == 0)",
           "refId": "A"
         }
       ],
-      "description": "OK: equals the count in synchronous_standby_names. Fix: 0 = COMMITS ARE STUCK — restore standby/network now or drop sync temporarily."
+      "description": "Cluster-wide: reads whichever node is currently primary, regardless of the node selector. OK: equals the count in synchronous_standby_names. Fix: 0 = COMMITS ARE STUCK — restore standby/network now or drop sync temporarily; «no primary» = no node reports primary role (both in recovery, or exporter down — check pg-monitoring)."
     },
     {
       "id": 604,
@@ -3090,11 +2384,12 @@
         "h": 7,
         "w": 4,
         "x": 20,
-        "y": 229
+        "y": 162
       },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "noValue": "no standby",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -3113,16 +2408,16 @@
       },
       "targets": [
         {
-          "expr": "pg_standby_wal_receiver_up{host=~\"$host\"} or on() vector(0)",
+          "expr": "pg_standby_wal_receiver_up and on(node) (pg_in_recovery == 1)",
           "refId": "A"
         }
       ],
-      "description": "OK: 1. Fix: 0 = the stream is broken (network/slot/timeline) — replay lag may falsely read zero meanwhile."
+      "description": "Cluster-wide: reads whichever node is currently standby, regardless of the node selector. OK: 1. Fix: 0 = the stream is broken (network/slot/timeline) — replay lag may falsely read zero meanwhile; «no standby» = no node reports standby role (promoted pair, or exporter down — check pg-monitoring)."
     },
     {
       "id": 605,
       "type": "timeseries",
-      "title": "Replication Slots",
+      "title": "Replication Slots (retained WAL)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -3131,7 +2426,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 236
+        "y": 169
       },
       "fieldConfig": {
         "defaults": {
@@ -3141,22 +2436,70 @@
       },
       "targets": [
         {
-          "expr": "pg_replication_slots{host=~\"$host\",kind=\"retained_wal_bytes\"}",
+          "expr": "pg_replication_slots{kind=\"retained_wal_bytes\"}",
           "legendFormat": "{{slot_name}}",
           "refId": "A"
         },
         {
-          "expr": "pg_replication_slots{host=~\"$host\",kind=\"safe_wal_size\"} > 0",
+          "expr": "pg_replication_slots{kind=\"safe_wal_size\"} > 0",
           "legendFormat": "{{slot_name}} safe_wal_size (запас до потери слота)",
           "refId": "B"
-        },
-        {
-          "expr": "pg_replication_slot_status{host=~\"$host\",wal_status!~\"reserved|extended\"}",
-          "legendFormat": "{{slot_name}}: {{wal_status}} (ПРОБЛЕМА)",
-          "refId": "C"
         }
       ],
       "description": "Watch: retained WAL growing = the slot consumer is dead; safe_wal_size shrinking = headroom to slot loss. Fix: revive the consumer or DROP the slot before primary's disk fills."
+    },
+    {
+      "id": 616,
+      "type": "table",
+      "title": "Slot Status",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 169
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "pg_replication_slot_status",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "target": true,
+              "host": true
+            },
+            "indexByName": {
+              "node": 0,
+              "slot_name": 1,
+              "wal_status": 2
+            }
+          }
+        }
+      ],
+      "description": "Slot state as text, not a 0/1 line on a bytes axis. OK: reserved (or extended). Fix: unreserved = the slot is about to lose WAL it still needs; lost = it already did and the consumer must be rebuilt. Retained bytes and headroom — in Replication Slots (retained WAL)."
     },
     {
       "id": 606,
@@ -3169,8 +2512,8 @@
       "gridPos": {
         "h": 7,
         "w": 8,
-        "x": 8,
-        "y": 236
+        "x": 16,
+        "y": 169
       },
       "fieldConfig": {
         "defaults": {
@@ -3197,12 +2540,12 @@
       },
       "targets": [
         {
-          "expr": "pg_standby_replay_gap_bytes{host=~\"$host\"}",
+          "expr": "pg_standby_replay_gap_bytes and on(node) (pg_in_recovery == 1)",
           "legendFormat": "replay gap, байт",
           "refId": "A"
         },
         {
-          "expr": "pg_standby_replay_delay_seconds{host=~\"$host\"}",
+          "expr": "pg_standby_replay_delay_seconds and on(node) (pg_in_recovery == 1)",
           "legendFormat": "replay delay, сек",
           "refId": "B"
         }
@@ -3220,8 +2563,8 @@
       "gridPos": {
         "h": 7,
         "w": 8,
-        "x": 16,
-        "y": 236
+        "x": 0,
+        "y": 176
       },
       "fieldConfig": {
         "defaults": {
@@ -3231,193 +2574,26 @@
       },
       "targets": [
         {
-          "expr": "sum by (kind) (rate(pg_standby_conflicts_total{host=~\"$host\"}[5m])) * 60",
+          "expr": "sum by (kind) ((rate(pg_standby_conflicts_total[5m]) and on(node) (pg_in_recovery == 1)) * 60)",
           "legendFormat": "{{kind}}",
           "refId": "A"
         }
       ],
       "description": "Watch: mostly snapshot/lock — standby queries cancelled by replay. Fix: hot_standby_feedback (price — bloat on primary) or max_standby_streaming_delay."
-    },
-    {
-      "id": 700,
-      "type": "row",
-      "title": "Monitoring Health",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 243
-      },
-      "collapsed": false
-    },
-    {
-      "id": 701,
-      "type": "timeseries",
-      "title": "Scrape Targets",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 4,
-        "x": 0,
-        "y": 244
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "up{host=~\"$host\"}",
-          "legendFormat": "{{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "up{job=\"prometheus\"}",
-          "legendFormat": "prometheus",
-          "refId": "B"
-        }
-      ],
-      "description": "OK: all = 1. Fix: whichever job is down — that monitoring layer is blind; absent() alerts must catch this."
-    },
-    {
-      "id": 702,
-      "type": "timeseries",
-      "title": "Scrape Duration",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 5,
-        "x": 4,
-        "y": 244
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "scrape_duration_seconds{host=~\"$host\"}",
-          "legendFormat": "{{job}}",
-          "refId": "A"
-        }
-      ],
-      "description": "OK: well below the 10s timeout. Fix: close to 10s — a heavy collector; see rollback triggers in rollback_cumulative_stats.txt."
-    },
-    {
-      "id": 703,
-      "type": "timeseries",
-      "title": "Scrape Samples vs Limit",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 5,
-        "x": 9,
-        "y": 244
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "scrape_samples_post_metric_relabeling{job=~\"sql-.*\",host=~\"$host\"}",
-          "legendFormat": "{{job}}",
-          "refId": "A"
-        },
-        {
-          "expr": "vector(8000)",
-          "legendFormat": "sample_limit (prometheus.yml)",
-          "refId": "B"
-        }
-      ],
-      "description": "Watch: approaching sample_limit — exceeding it drops the WHOLE scrape. Fix: cardinality (top-N, labels) or raise the limit in prometheus.yml (the 8000 line is hardcoded)."
-    },
-    {
-      "id": 704,
-      "type": "timeseries",
-      "title": "pgss Evictions",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 5,
-        "x": 14,
-        "y": 244
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "increase(pg_statements_dealloc_total{host=~\"$host\"}[1h])",
-          "legendFormat": "{{job}}",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: dealloc growth = top-N silently undercounts. Fix: raise pg_stat_statements.max or reset more often."
-    },
-    {
-      "id": 705,
-      "type": "timeseries",
-      "title": "TSDB Head Series",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 5,
-        "x": 19,
-        "y": 244
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "expr": "prometheus_tsdb_head_series",
-          "legendFormat": "head series",
-          "refId": "A"
-        }
-      ],
-      "description": "Watch: growth steps = cardinality explosion. Fix: find the culprit via count by (__name__), sample_limit guards."
     }
   ],
   "templating": {
     "list": [
       {
-        "name": "db",
-        "label": "Инстанс",
+        "name": "node",
+        "label": "Нода",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "prometheus"
         },
         "query": {
-          "query": "label_values(pg_up, job)",
+          "query": "label_values(pg_up, node)",
           "refId": "var"
         },
         "refresh": 2,
@@ -3425,10 +2601,10 @@
         "includeAll": false,
         "multi": false,
         "current": {
-          "text": "primary",
-          "value": "primary"
+          "text": "pg01",
+          "value": "pg01"
         },
-        "regex": "/^(primary|standby)$/"
+        "description": "Идентичность НОДЫ, не роль: после failover нода остаётся собой. Роль показывают панели Node Roles / pg_role_info."
       },
       {
         "name": "host",
@@ -3439,7 +2615,7 @@
           "uid": "prometheus"
         },
         "query": {
-          "query": "label_values(pg_up{job=~\"$db\"}, host)",
+          "query": "label_values(pg_up{node=~\"$node\"}, host)",
           "refId": "var"
         },
         "refresh": 2,
@@ -3450,20 +2626,132 @@
           "text": "demo-host",
           "value": "demo-host"
         }
+      },
+      {
+        "name": "datname",
+        "label": "База",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(pg_table_tuples{node=~\"$node\"}, datname)",
+          "refId": "var"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "current": {
+          "text": "All",
+          "value": "$__all",
+          "selected": true
+        },
+        "description": "База для панелей объектного слоя (per-database метрики). Cluster-wide панели (Database Size, Transaction ID Age) фильтром не управляются."
       }
     ]
   },
   "links": [
     {
-      "title": "← Обзор",
+      "title": "← Overview",
       "type": "link",
       "icon": "dashboard",
       "url": "/d/pg-overview",
       "keepTime": true,
-      "asDropdown": false,
       "includeVars": true,
+      "asDropdown": false,
+      "targetBlank": false,
+      "tags": []
+    },
+    {
+      "title": "Queries (forensics)",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/pg-queries",
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false,
+      "targetBlank": false,
+      "tags": []
+    },
+    {
+      "title": "Hygiene & Debt",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/pg-hygiene",
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false,
+      "targetBlank": false,
+      "tags": []
+    },
+    {
+      "title": "Monitoring health",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/pg-monitoring",
+      "keepTime": true,
+      "includeVars": true,
+      "asDropdown": false,
       "targetBlank": false,
       "tags": []
     }
-  ]
+  ],
+  "annotations": {
+    "list": [
+      {
+        "name": "Failover",
+        "enable": true,
+        "iconColor": "red",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "changes(pg_timeline_id[2m]) > 0",
+        "step": "60s",
+        "target": {
+          "expr": "changes(pg_timeline_id[2m]) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "Promote / failover",
+        "textFormat": "{{node}}: timeline changed (promote)"
+      },
+      {
+        "name": "PostgreSQL restart",
+        "enable": true,
+        "iconColor": "orange",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "resets(pg_postmaster_uptime_seconds{node=~\"$node\"}[5m]) > 0",
+        "step": "60s",
+        "target": {
+          "expr": "resets(pg_postmaster_uptime_seconds{node=~\"$node\"}[5m]) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "PostgreSQL restart",
+        "textFormat": "{{node}}"
+      },
+      {
+        "name": "Stats reset",
+        "enable": true,
+        "iconColor": "blue",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "expr": "resets(pg_statements_calls_total{node=~\"$node\"}[10m]) > 0",
+        "step": "60s",
+        "target": {
+          "expr": "resets(pg_statements_calls_total{node=~\"$node\"}[10m]) > 0",
+          "refId": "Anno"
+        },
+        "titleFormat": "pg_stat_statements reset",
+        "textFormat": "{{node}} — counters restarted from zero"
+      }
+    ]
+  }
 }
